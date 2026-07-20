@@ -235,6 +235,40 @@ def test_css_pins_earthy_palette() -> None:
         assert ref in css, f"{ref} not used in style.css"
 
 
+def test_app_grid_flexes_to_remaining_viewport_height() -> None:
+    # Commit 7: the app shell used to assume a 49px header via
+    # `height: calc(100vh - 49px)` on .app-grid, but the real header
+    # is ~79px (the h1 + folder-info + status + button stack
+    # vertically), which overflowed the viewport by 30px and
+    # produced a useless vertical scrollbar. The fix turns the
+    # body into a flex column and gives .app-grid `flex: 1`, so
+    # the grid takes exactly the remaining viewport regardless of
+    # the header's actual height. This test pins the new contract
+    # by reading the stylesheet and asserting the brittle
+    # 100vh - N pattern is gone from the active rules.
+    from randonneur.server import static_files_dir
+    client = TestClient(create_app(static_dir=static_files_dir()))
+    css = client.get("/style.css").text
+    # Strip /* … */ comments before checking — explanatory text
+    # legitimately mentions the old value to describe the bug.
+    import re
+    css_no_comments = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    # The brittle assumption is gone from the active CSS.
+    assert "calc(100vh - 49px)" not in css_no_comments, (
+        "calc(100vh - 49px) is back in the active CSS; the page will "
+        "overflow whenever the header is taller than 49px (which it "
+        "has been since the settings tab landed)"
+    )
+    # And the new shape is in place: body is a flex column,
+    # .app-grid takes flex: 1.
+    assert "display: flex" in css_no_comments
+    assert "flex-direction: column" in css_no_comments
+    assert "flex: 1 1 0" in css_no_comments or re.search(r"flex:\s*1\s*;", css_no_comments)
+    # 100dvh for the dynamic-viewport case (URL bar collapse on
+    # mobile doesn't introduce a phantom scrollbar).
+    assert "100dvh" in css_no_comments
+
+
 def test_index_contains_required_dom_ids() -> None:
     # The app.js references these IDs; if any of them is renamed in
     # the HTML without updating app.js (or vice versa), the UI silently

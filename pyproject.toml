@@ -24,7 +24,15 @@ dependencies = [
 randonneur = "randonneur.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    # Headless-Chrome regression tests in tests/test_headless.py
+    # (commit 7). The test is marked ``integration`` so it's
+    # skipped on a default ``pytest`` run; opt in with
+    # ``pytest -m integration``.
+    "websocket-client>=1.6",
+]
 
 [tool.pytest.ini_options]
 markers = [

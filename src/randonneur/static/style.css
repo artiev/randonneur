@@ -63,6 +63,23 @@ html, body {
   background: #f6f8fa;
 }
 
+/* Body is a flex column so the header takes its natural height
+   and the .app-grid fills the remaining viewport. The old
+   `height: calc(100vh - 49px)` on the grid assumed a fixed 49px
+   header; once we added the FA gear icon and the right-side tab
+   status line, the header grew to ~79px and the grid overflowed
+   the viewport by 30px, producing a vertical scrollbar that
+   didn't have a reason to exist. 100dvh is the dynamic-viewport
+   unit (URL bar collapsing on mobile doesn't introduce extra
+   scroll) with a 100vh fallback for browsers that don't
+   recognise it. */
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -162,7 +179,15 @@ button:hover { background: #eaeef2; }
   grid-template-areas:
     "sidebar map"
     "sidebar profile";
-  height: calc(100vh - 49px); /* minus header */
+  /* flex: 1 inside the body (commit 7 made the body a flex
+     column) lets the grid take exactly the remaining viewport
+     height, regardless of the header's actual height. The old
+     `calc(100vh - 49px)` assumed a fixed header height and
+     overflowed by 30px once the header grew. min-height: 0
+     overrides the default `min-height: auto` on grid items so
+     the grid is allowed to shrink below its content height. */
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .sidebar {
@@ -256,7 +281,10 @@ button:hover { background: #eaeef2; }
 .map-pane,
 .profile-pane {
   background: #ffffff;
-  border-bottom: 1px solid #d0d7de;
+  /* The 1px border-bottom used to live here, but it added up
+     with the profile-pane's own border to overflow the viewport
+     by 2px (commit 7: dropped the border, the visual gap between
+     the map and the profile is enough on its own). */
   /* Flex column so the inner #map / #profile can use flex: 1 to
      fill the row without depending on an explicit height. Without
      this, .map-pane has no flex context and #map collapses to
