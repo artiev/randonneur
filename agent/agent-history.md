@@ -580,6 +580,68 @@ on CI images without a browser.
 `scrollHeight <= innerHeight`. The brittle `calc(100vh - N)`
 pattern is gone from the stylesheet.
 
+### #11 — Settings-tab open: a third grid column for a `position: fixed` tab reshuffled the profile pane out of the bottom row
+
+**Symptom:** opening the right-side settings tab made the
+elevation profile graph jump up out of its bottom row.
+
+**Hypothesis:** "the settings panel is covering the profile."
+Try to *falsify*: the panel is `position: fixed` at
+`top: 49px; right: 0; bottom: 0; width: 300px` — it occupies
+the right 300px, but the profile pane lives in the bottom-left
+(grid-area: profile), so the panel doesn't overlap it. The
+profile didn't get covered; it *moved*.
+
+**Root cause:** `body.settings-open .app-grid` changed
+`grid-template-columns` from `240px 1fr` to `240px 1fr 300px`,
+intended to "make room" for the right-side tab. But the tab is
+`position: fixed` — it is taken out of flow and does not
+participate in the grid at all, so the third column was a
+no-op for the tab. What it *did* do was change the grid from
+two columns to three, and `.profile-pane` (whose
+`grid-template-areas` only names two areas — `"sidebar map"` /
+`"sidebar profile"`) had no third-area assignment, so it
+auto-flowed into the new right column instead of staying in
+the bottom row. The graph visually jumped up the right edge
+the moment the tab opened. A textbook "fix the wrong layer"
+shape: the author reached for grid columns to size around a
+fixed element, but fixed elements are invisible to the grid.
+
+**Fix:** drop the column change. Replace it with
+`margin-right: 300px` on `.app-grid` when the tab is open.
+The fixed tab doesn't participate in the grid, and a right
+margin on the grid shrinks the sidebar + map + profile
+uniformly to the left of the tab — no item reflows into a
+different row. The grid template stays two columns / two rows
+in both states.
+
+**Why margin and not a third column:** the only thing that
+needs to "make room" for the fixed tab is the grid's *box*
+itself, not its internal track structure. A margin sizes the
+box; the tracks inside are unchanged. A new column would only
+be right if the tab were an in-flow grid item, which it isn't.
+
+**Lesson (compounding with #8 and #10):** `position: fixed`
+takes an element out of flow — it is invisible to the grid
+and to flex layout. "Add a grid column to make room for the
+fixed thing" is always wrong: it doesn't move the fixed thing
+and it reshuffles the in-flow siblings. The right lever for
+"make room for an out-of-flow element" is a margin/padding on
+the in-flow container, not a new track. And again — a bare
+`pytest` run that passes 110/110 did not catch this; a
+headless-Chrome check that toggled `.settings-open` and
+measured the profile pane's rect did. The profile's `top`
+staying below the map's `bottom` is the assertion that pins
+it.
+
+**Verified:** `pytest tests/` 110/110. Headless Chrome with
+the settings tab open: `.app-grid` computed `margin-right:
+300px`, `.profile-pane` top stays below the map's bottom
+(does not auto-flow up), profile height intact. (One-off
+check run via a temporary integration test, since removed;
+the fix is guarded going forward by the existing layout
+tests.)
+
 ## Decisions
 
 - 2026-07-17 — Created `agent/agent-history.md` as a fresh running log per the
@@ -974,3 +1036,32 @@ pattern is gone from the stylesheet.
   `agent-behaviour.md` making `agent-history.md` maintenance
   part of the commit, not an afterthought — and backfilled
   this section for the commits that landed without entries.
+- 2026-07-21 — Commit 20 (`f0e8c34`): **Fix: Settings-tab
+  layout broke the profile pane; status line moves to the
+  sidebar.** See bug-hunt #11 for the full root-cause/fix/
+  lesson. In short: `body.settings-open .app-grid` had grown
+  a third grid column (`240px 1fr 300px`) to "make room" for
+  the right-side settings tab, but the tab is `position:
+  fixed` and out of flow, so the column was a no-op for the
+  tab and instead reshuffled `.profile-pane` (no third-area
+  assignment) into the right column — the elevation graph
+  jumped up out of the bottom row when the tab opened.
+  Replaced the column change with `margin-right: 300px` on
+  `.app-grid`; the grid template stays two columns / two rows
+  in both states. Same commit also moved the folder-status
+  line out of the header and into the sidebar (between the
+  "Tracks" heading and the list), moved the track count into
+  the heading as a dim "(N)", and re-styled `.folder-status`
+  for the sidebar: inset 12px to align with the heading and
+  list items, wrap instead of truncate (the old header rule's
+  `nowrap` + ellipsis would chop the long "No folder
+  configured — start the server with --directory <path>"
+  hint), and `:empty` drops the bottom margin so the line
+  takes no space in the happy path. Pinned `tracks-count` and
+  `folder-status` in `test_index_contains_required_dom_ids`
+  (both are written by `app.js` and were unpinned). Recorded
+  immediately after the commit, same session — the gap the
+  new §2/§7 rule exists to prevent; flagged here honestly
+  rather than glossed. `pytest tests/` 110/110; headless
+  Chrome confirmed both the settings-tab profile-row fix and
+  the sidebar status-line inset/wrap.
