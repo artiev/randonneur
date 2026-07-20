@@ -28,16 +28,18 @@
     >⚙</button>
   </header>
 
-  <!-- Settings popover. Hidden by default; toggled by #settings-button.
-       Positioned absolutely below the header so it overlays the map
-       pane without taking up layout space. Backdrop click closes it. -->
-  <div id="settings-backdrop" class="settings-backdrop" hidden></div>
+  <!-- Settings tab. Anchored to the right edge of the viewport; the
+       .open class on #settings-panel slides it into view from off-
+       screen. The header sits at the top of the tab (so the close
+       button is always within reach). Sections stack vertically
+       below it. No backdrop: the tab takes its own column on the
+       right when open, the map and profile panes resize beneath it
+       automatically via the app-grid columns. -->
   <section
     id="settings-panel"
     class="settings-panel"
     role="dialog"
     aria-labelledby="settings-title"
-    hidden
   >
     <header class="settings-header">
       <h2 id="settings-title">Settings</h2>

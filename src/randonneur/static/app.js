@@ -56,7 +56,6 @@
   const profileStats = document.getElementById("profile-stats");
   const settingsButton = document.getElementById("settings-button");
   const settingsPanel = document.getElementById("settings-panel");
-  const settingsBackdrop = document.getElementById("settings-backdrop");
   const settingsClose = document.getElementById("settings-close");
   const settingsSources = document.getElementById("settings-sources");
   const settingsScale = document.getElementById("settings-scale");
@@ -630,19 +629,19 @@
 
   function openSettings() {
     renderSettingsPanel();
-    settingsPanel.hidden = false;
-    settingsBackdrop.hidden = false;
+    settingsPanel.classList.add("open");
+    document.body.classList.add("settings-open");
     settingsButton.setAttribute("aria-expanded", "true");
   }
 
   function closeSettings() {
-    settingsPanel.hidden = true;
-    settingsBackdrop.hidden = true;
+    settingsPanel.classList.remove("open");
+    document.body.classList.remove("settings-open");
     settingsButton.setAttribute("aria-expanded", "false");
   }
 
   function isSettingsOpen() {
-    return !settingsPanel.hidden;
+    return settingsPanel.classList.contains("open");
   }
 
   settingsButton.addEventListener("click", () => {
@@ -650,11 +649,10 @@
     else openSettings();
   });
   settingsClose.addEventListener("click", closeSettings);
-  settingsBackdrop.addEventListener("click", closeSettings);
   settingsScale.addEventListener("change", () => {
     setScaleBar(settingsScale.checked);
   });
-  // Escape closes the popover — standard affordance for a dialog.
+  // Escape closes the tab — standard affordance for a dialog.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && isSettingsOpen()) {
       closeSettings();

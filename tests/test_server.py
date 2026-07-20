@@ -171,11 +171,12 @@ def test_index_contains_required_dom_ids() -> None:
     for id_ in ("folder-path",
                 "track-list", "errors", "errors-list", "map",
                 "profile", "profile-title", "profile-stats",
-                # Settings panel. Pinning these IDs means a rename in
+                # Settings tab. Pinning these IDs means a rename in
                 # the HTML without updating app.js (or vice versa) gets
                 # caught in CI rather than as a silent "click the gear,
-                # nothing happens" in the browser.
-                "settings-button", "settings-panel", "settings-backdrop",
+                # nothing happens" in the browser. The tab no longer
+                # uses a backdrop (commit 3) so it's not pinned.
+                "settings-button", "settings-panel",
                 "settings-close", "settings-sources", "settings-scale"):
         assert f'id="{id_}"' in body, f"missing id={id_!r} in index.html"
 

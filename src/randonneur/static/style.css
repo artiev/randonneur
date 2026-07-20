@@ -291,31 +291,47 @@ button:hover { background: #eaeef2; }
 
 .icon-button[aria-expanded="true"] {
   /* Subtle "open" state. The background flips so the user can
-     tell which button is the active one when the popover is up. */
+     tell which button is the active one when the tab is up. */
   background: #ddf4ff;
   border-color: #0969da;
 }
 
-.settings-backdrop {
-  /* Covers the rest of the viewport when the popover is open so
-     a click anywhere outside dismisses it. Positioned in the
-     layout (not as an overlay) so it eats pointer events. */
-  position: fixed;
-  inset: 49px 0 0 0;  /* below the 49px header */
-  background: rgba(0, 0, 0, 0.05);
-  z-index: 10;
-}
-
+/* Settings tab — a full-height column that sits to the right of
+   the map/profile grid. Closed state: a fixed-width column flush
+   to the right edge, slid off-screen via transform. Open state:
+   the same column translated into view, plus a grid-column on
+   the .app-grid that gives the map/profile room to shrink to
+   make space. The fixed-position trick is so the slide-in
+   transition is GPU-accelerated (transform is, grid-column is
+   not). The map and profile panes underneath resize in lockstep
+   with the column via the body's grid-template-columns rule
+   below. z-index sits above Leaflet's tile-pane (~200) and
+   overlay-pane (~400) defaults so the tab is never hidden
+   beneath a polyline. */
 .settings-panel {
   position: fixed;
-  top: 57px;       /* header (49px) + a hair of breathing room */
-  right: 16px;
-  width: 280px;
+  top: 49px;       /* below the header */
+  right: 0;
+  bottom: 0;
+  width: 300px;
   background: #ffffff;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  z-index: 20;
+  border-left: 1px solid #d0d7de;
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.06);
+  z-index: 1000;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 180ms ease-out;
+}
+
+.settings-panel.open {
+  transform: translateX(0);
+}
+
+/* When the tab is open, the .app-grid grows a third column for it.
+   The CSS variable lets the JS toggle it without hard-coding the
+   column count in two places. */
+body.settings-open .app-grid {
+  grid-template-columns: 240px 1fr 300px;
 }
 
 .settings-header {
@@ -336,7 +352,7 @@ button:hover { background: #eaeef2; }
   padding: 8px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .settings-group {
