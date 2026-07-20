@@ -55,15 +55,19 @@
   const profileEl = document.getElementById("profile");
   const profileTitle = document.getElementById("profile-title");
   const profileStats = document.getElementById("profile-stats");
-  const settingsButton = document.getElementById("settings-button");
-  const settingsPanel = document.getElementById("settings-panel");
-  const settingsClose = document.getElementById("settings-close");
+  const tabButtonSettings = document.getElementById("tab-button-settings");
+  const tabButtonEdit = document.getElementById("tab-button-edit");
+  const sidePanel = document.getElementById("side-panel");
+  const sidePanelClose = document.getElementById("side-panel-close");
+  const sidePanelTitle = document.getElementById("side-panel-title");
   const settingsSources = document.getElementById("settings-sources");
   const settingsScale = document.getElementById("settings-scale");
-  // Metadata editor. The editor is hidden until a track is selected
-  // (commit 4: the fieldset is shown by renderMetadataEditor, hidden
-  // by clearMetadataEditor when the selection clears).
+  // Metadata editor. The editor lives in the Edit view of the right-side
+  // tab; the fieldset is shown by renderMetadataEditor (when a track is
+  // selected) and hidden by clearMetadataEditor when the selection clears.
+  // #metadata-empty is the no-track-selected placeholder shown in its place.
   const metadataGroup = document.getElementById("metadata-group");
+  const metadataEmpty = document.getElementById("metadata-empty");
   const metadataTarget = document.getElementById("metadata-target");
   const metadataTrackName = document.getElementById("metadata-track-name");
   const metadataTrackDesc = document.getElementById("metadata-track-desc");
@@ -455,12 +459,14 @@
       // hover on the profile doesn't have to lazy-create the marker.
       const detail = trackDetails.get(id);
       if (detail) ensureMapCrosshair(id, detail.color);
-      renderMetadataEditor(id);
     } else {
       clearProfile();
       hideProfileCrosshair();
-      clearMetadataEditor();
     }
+    // The Edit view follows the selection only while it's the active
+    // view — selecting a track does not auto-open the tab. When the
+    // tab is closed, the form populates the next time Edit is opened.
+    if (activeView === "edit") renderEditView();
   }
 
   // ─── Profile (Plotly) ────────────────────────────────────────────────────
@@ -651,35 +657,60 @@
     settingsScale.checked = showScaleBar;
   }
 
-  function openSettings() {
-    renderSettingsPanel();
-    settingsPanel.classList.add("open");
-    document.body.classList.add("settings-open");
-    settingsButton.setAttribute("aria-expanded", "true");
+  // Which view the right-side tab is showing, or null when the tab is
+  // closed. The two header buttons each toggle a view; only one view is
+  // shown at a time, and clicking the active view's button closes the tab.
+  let activeView = null;
+
+  function showView(view) {
+    // Reveal only the requested .tab-view; hide the other. The panel's
+    // data-view also drives the header title.
+    for (const v of sidePanel.querySelectorAll(".tab-view")) {
+      v.hidden = v.dataset.view !== view;
+    }
+    sidePanel.dataset.view = view;
+    sidePanelTitle.textContent = view === "settings" ? "Settings" : "Edit metadata";
   }
 
-  function closeSettings() {
-    settingsPanel.classList.remove("open");
-    document.body.classList.remove("settings-open");
-    settingsButton.setAttribute("aria-expanded", "false");
+  function openTab(view) {
+    activeView = view;
+    showView(view);
+    sidePanel.classList.add("open");
+    document.body.classList.add("tab-open");
+    tabButtonSettings.setAttribute("aria-expanded", String(view === "settings"));
+    tabButtonEdit.setAttribute("aria-expanded", String(view === "edit"));
+    if (view === "settings") renderSettingsPanel();
+    else renderEditView();
   }
 
-  function isSettingsOpen() {
-    return settingsPanel.classList.contains("open");
+  function closeTab() {
+    activeView = null;
+    sidePanel.classList.remove("open");
+    document.body.classList.remove("tab-open");
+    tabButtonSettings.setAttribute("aria-expanded", "false");
+    tabButtonEdit.setAttribute("aria-expanded", "false");
   }
 
-  settingsButton.addEventListener("click", () => {
-    if (isSettingsOpen()) closeSettings();
-    else openSettings();
+  function isTabOpen() {
+    return sidePanel.classList.contains("open");
+  }
+
+  tabButtonSettings.addEventListener("click", () => {
+    if (activeView === "settings") closeTab();
+    else openTab("settings");
   });
-  settingsClose.addEventListener("click", closeSettings);
+  tabButtonEdit.addEventListener("click", () => {
+    if (activeView === "edit") closeTab();
+    else openTab("edit");
+  });
+  sidePanelClose.addEventListener("click", closeTab);
   settingsScale.addEventListener("change", () => {
     setScaleBar(settingsScale.checked);
   });
   // Escape closes the tab — standard affordance for a dialog.
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && isSettingsOpen()) {
-      closeSettings();
+    if (ev.key === "Escape" && isTabOpen()) {
+      closeTab();
       ev.preventDefault();
     }
   });
@@ -704,7 +735,23 @@
   }
 
   // ─── Metadata editor ───────────────────────────────────────────────────────
-  // ─── (lives in the right-side settings tab; commit 4) ──────────────────────
+  // ─── (lives in the Edit view of the right-side tab) ────────────────────────
+
+  function renderEditView() {
+    // The Edit view shows the metadata form when a track is selected,
+    // or the #metadata-empty placeholder when none is (or the selected
+    // track is no longer in the folder list). Called on openTab("edit")
+    // and whenever the selection changes while the Edit view is the
+    // active view (selectTrack / watcher refresh).
+    const summary = selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null;
+    if (summary) {
+      metadataEmpty.hidden = true;
+      renderMetadataEditor(selectedTrackId);
+    } else {
+      clearMetadataEditor();
+      metadataEmpty.hidden = false;
+    }
+  }
 
   function renderMetadataEditor(trackId) {
     // Populate the form from the folder list's TrackSummary (the
@@ -802,7 +849,10 @@
       const updated = await resp.json();
       const idx = tracks.findIndex((t) => t.id === id);
       if (idx >= 0) tracks[idx] = updated;
-      renderMetadataEditor(id);
+      // The editor is necessarily open (Save is only reachable from
+      // the Edit view), so re-render it in place to stay in sync with
+      // what's now on disk.
+      renderEditView();
       metadataStatus.textContent = "Saved.";
       metadataStatus.classList.add("success");
     } catch (err) {
@@ -921,14 +971,13 @@
       drawAllTracks();
       if (selectedTrackId) {
         fetchProfile(selectedTrackId);
-        // Re-render the metadata editor from the (potentially
-        // updated) folder list. If the selection was dropped above,
-        // this branch is skipped and the editor is cleared below.
-        renderMetadataEditor(selectedTrackId);
       } else {
         clearProfile();
-        clearMetadataEditor();
       }
+      // Re-render the Edit view from the (potentially updated) folder
+      // list, but only if it's the active view — a folder change while
+      // the tab is closed shouldn't populate a hidden form.
+      if (activeView === "edit") renderEditView();
       if (body.path) {
         // Path lives in the header; track count lives in the
         // sidebar heading. The sidebar's folder-status only surfaces

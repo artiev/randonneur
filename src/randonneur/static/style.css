@@ -388,19 +388,25 @@ button:hover { background: #eaeef2; }
   border-color: var(--color-accent);
 }
 
-/* Settings tab — a full-height column that sits to the right of
-   the map/profile grid. Closed state: a fixed-width column flush
-   to the right edge, slid off-screen via transform. Open state:
-   the same column translated into view, plus a grid-column on
-   the .app-grid that gives the map/profile room to shrink to
+.header-actions {
+  /* The header's last grid column holds the two tab buttons
+     (Settings + Edit) side by side. */
+  display: inline-flex;
+  gap: 8px;
+}
+
+/* Right-side tab — a full-height column that sits to the right of
+   the map/profile grid. Hosts two mutually-exclusive views
+   (Settings, Edit) toggled by the header buttons; the active view's
+   .tab-view is the only one not hidden. Closed state: a fixed-width
+   column flush to the right edge, slid off-screen via transform.
+   Open state: the same column translated into view, plus a right
+   margin on .app-grid that gives the map/profile room to shrink to
    make space. The fixed-position trick is so the slide-in
-   transition is GPU-accelerated (transform is, grid-column is
-   not). The map and profile panes underneath resize in lockstep
-   with the column via the body's grid-template-columns rule
-   below. z-index sits above Leaflet's tile-pane (~200) and
-   overlay-pane (~400) defaults so the tab is never hidden
-   beneath a polyline. */
-.settings-panel {
+   transition is GPU-accelerated (transform is, margin is not).
+   z-index sits above Leaflet's tile-pane (~200) and overlay-pane
+   (~400) defaults so the tab is never hidden beneath a polyline. */
+.side-panel {
   position: fixed;
   top: 49px;       /* below the header */
   right: 0;
@@ -415,7 +421,7 @@ button:hover { background: #eaeef2; }
   transition: transform 180ms ease-out;
 }
 
-.settings-panel.open {
+.side-panel.open {
   transform: translateX(0);
 }
 
@@ -431,7 +437,7 @@ button:hover { background: #eaeef2; }
    right margin on the whole grid is the right shape: the
    sidebar + map + profile all reflow uniformly to the left of
    the tab. */
-body.settings-open .app-grid {
+body.tab-open .app-grid {
   margin-right: 300px;
 }
 
@@ -521,11 +527,19 @@ body.settings-open .app-grid {
   cursor: pointer;
 }
 
-/* Metadata editor. Lives in the right-side tab (commit 3) and
+/* Metadata editor. Lives in the Edit view of the right-side tab and
    populates when a track is selected. Two text inputs and three
    textareas, each with a 1000-char cap matching the server-side
    validator. "Save" POSTs the edited fields; "Clear all" empties
-   the form (the user then clicks Save to persist the clear). */
+   the form (the user then clicks Save to persist the clear). When no
+   track is selected, #metadata-empty shows in its place. */
+.metadata-empty {
+  font-size: 13px;
+  color: #57606a;
+  font-style: italic;
+  padding: 12px 0;
+}
+
 .metadata-target {
   font-size: 12px;
   color: #57606a;

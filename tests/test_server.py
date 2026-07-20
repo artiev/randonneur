@@ -160,7 +160,7 @@ def test_static_serves_index_html_and_assets() -> None:
     assert css.status_code == 200
     assert "text/css" in css.headers["content-type"]
     assert "app-grid" in css.text  # the layout class
-    assert ".settings-panel" in css.text  # the settings popover
+    assert ".side-panel" in css.text  # the right-side tab (Settings/Edit)
 
 
 def test_static_serves_favicon() -> None:
@@ -196,6 +196,7 @@ def test_index_links_favicon_and_font_awesome() -> None:
     # The ⚙ glyph in the header button must be an FA icon (the
     # unicode fallback was removed in commit 5).
     assert "fa-gear" in body
+    assert "fa-pen-to-square" in body  # the Edit-tab button
     assert "fa-xmark" in body
     # And the metadata editor's Save/Clear buttons picked up icons
     # in the same commit.
@@ -285,16 +286,18 @@ def test_index_contains_required_dom_ids() -> None:
                 "tracks-count", "folder-status",
                 "track-list", "errors", "errors-list", "map",
                 "profile", "profile-title", "profile-stats",
-                # Settings tab. Pinning these IDs means a rename in
-                # the HTML without updating app.js (or vice versa) gets
-                # caught in CI rather than as a silent "click the gear,
-                # nothing happens" in the browser. The tab no longer
-                # uses a backdrop (commit 3) so it's not pinned.
-                "settings-button", "settings-panel",
-                "settings-close", "settings-sources", "settings-scale",
-                # Metadata editor (commit 4). Same rationale: a
+                # Right-side tab. Two header buttons (Settings + Edit)
+                # open it; pinning these IDs means a rename in the HTML
+                # without updating app.js (or vice versa) gets caught in
+                # CI rather than as a silent "click the button, nothing
+                # happens" in the browser.
+                "tab-button-settings", "tab-button-edit",
+                "side-panel", "side-panel-close", "side-panel-title",
+                "settings-sources", "settings-scale",
+                # Metadata editor, in the Edit view. Same rationale: a
                 # rename without updating app.js breaks the editor
                 # silently in the browser.
+                "metadata-empty",
                 "metadata-group", "metadata-target",
                 "metadata-track-name", "metadata-track-desc",
                 "metadata-meta-name", "metadata-meta-desc",

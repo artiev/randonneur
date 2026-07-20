@@ -20,105 +20,125 @@
       <span class="folder-info-label">Folder</span>
       <span id="folder-path" class="folder-path" aria-live="polite"></span>
     </div>
-    <button
-      id="settings-button"
-      class="icon-button"
-      type="button"
-      title="Settings"
-      aria-label="Settings"
-      aria-expanded="false"
-      aria-controls="settings-panel"
-    ><i class="fa-solid fa-gear" aria-hidden="true"></i></button>
+    <div class="header-actions">
+      <button
+        id="tab-button-settings"
+        class="icon-button"
+        type="button"
+        title="Settings"
+        aria-label="Settings"
+        aria-expanded="false"
+        aria-controls="side-panel"
+      ><i class="fa-solid fa-gear" aria-hidden="true"></i></button>
+      <button
+        id="tab-button-edit"
+        class="icon-button"
+        type="button"
+        title="Edit track metadata"
+        aria-label="Edit track metadata"
+        aria-expanded="false"
+        aria-controls="side-panel"
+      ><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i></button>
+    </div>
   </header>
 
-  <!-- Settings tab. Anchored to the right edge of the viewport; the
-       .open class on #settings-panel slides it into view from off-
-       screen. The header sits at the top of the tab (so the close
-       button is always within reach). Sections stack vertically
-       below it. No backdrop: the tab takes its own column on the
-       right when open, the map and profile panes resize beneath it
-       automatically via the app-grid columns. -->
+  <!-- Right-side tab. Anchored to the right edge of the viewport; the
+       .open class on #side-panel slides it into view from off-screen.
+       The tab hosts two mutually-exclusive views — Settings and Edit —
+       selected by the two header buttons and shown via the panel's
+       data-view attribute (only one .tab-view is visible at a time).
+       The header sits at the top so the close button is always within
+       reach. No backdrop: the tab takes its own column on the right
+       when open, the map and profile panes resize beneath it via the
+       .app-grid right margin. -->
   <section
-    id="settings-panel"
-    class="settings-panel"
+    id="side-panel"
+    class="side-panel"
     role="dialog"
-    aria-labelledby="settings-title"
+    aria-labelledby="side-panel-title"
   >
     <header class="settings-header">
-      <h2 id="settings-title">Settings</h2>
+      <h2 id="side-panel-title">Settings</h2>
       <button
-        id="settings-close"
+        id="side-panel-close"
         class="icon-button"
         type="button"
         title="Close"
-        aria-label="Close settings"
+        aria-label="Close"
       ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
     </header>
     <div class="settings-body">
-      <fieldset class="settings-group">
-        <legend>Base layer</legend>
-        <div id="settings-sources" class="settings-sources">
-          <!-- Populated from /api/settings. -->
+      <!-- Settings view: base layer + map controls. -->
+      <div class="tab-view" data-view="settings" hidden>
+        <fieldset class="settings-group">
+          <legend>Base layer</legend>
+          <div id="settings-sources" class="settings-sources">
+            <!-- Populated from /api/settings. -->
+          </div>
+        </fieldset>
+        <fieldset class="settings-group">
+          <legend>Map controls</legend>
+          <label class="settings-toggle">
+            <input id="settings-scale" type="checkbox" />
+            <span>Show scale bar</span>
+          </label>
+        </fieldset>
+      </div>
+      <!-- Edit view: metadata editor for the currently selected track.
+           Populated by renderMetadataEditor() from the TrackSummary's
+           metadata fields. The "Save" button POSTs the edited fields to
+           PATCH /api/tracks/{id}/metadata; on success the cache is
+           replaced and the track list + map update in place. The file
+           is rewritten on the server (atomic tmp + os.replace) so a
+           crash mid-save leaves the original GPX untouched. When no
+           track is selected, #metadata-empty shows instead of the form. -->
+      <div class="tab-view" data-view="edit" hidden>
+        <div id="metadata-empty" class="metadata-empty">
+          Select a track to edit its metadata.
         </div>
-      </fieldset>
-      <fieldset class="settings-group">
-        <legend>Map controls</legend>
-        <label class="settings-toggle">
-          <input id="settings-scale" type="checkbox" />
-          <span>Show scale bar</span>
-        </label>
-      </fieldset>
-      <fieldset class="settings-group" id="metadata-group" hidden>
-        <!--
-          Metadata editor for the currently selected track. Populated
-          by renderMetadataEditor() from the TrackSummary's metadata
-          fields. The "Save" button POSTs the edited fields to
-          PATCH /api/tracks/{id}/metadata; on success the cache is
-          replaced and the track list + map update in place. The
-          file is rewritten on the server (atomic tmp + os.replace)
-          so a crash mid-save leaves the original GPX untouched.
-        -->
-        <legend>Metadata</legend>
-        <div class="metadata-target" id="metadata-target"></div>
-        <div class="metadata-fields">
-          <label class="metadata-field">
-            <span class="metadata-label">Display name (track)</span>
-            <input id="metadata-track-name" type="text" maxlength="1000"
-                   placeholder="No display name set" />
-          </label>
-          <label class="metadata-field">
-            <span class="metadata-label">Description (track)</span>
-            <textarea id="metadata-track-desc" rows="3" maxlength="1000"
-                      placeholder="No description set"></textarea>
-          </label>
-          <label class="metadata-field">
-            <span class="metadata-label">GPX <code>name</code></span>
-            <input id="metadata-meta-name" type="text" maxlength="1000"
-                   placeholder="No <name> set" />
-          </label>
-          <label class="metadata-field">
-            <span class="metadata-label">GPX <code>description</code></span>
-            <textarea id="metadata-meta-desc" rows="3" maxlength="1000"
-                      placeholder="No <desc> set"></textarea>
-          </label>
-          <label class="metadata-field">
-            <span class="metadata-label">Author</span>
-            <input id="metadata-meta-author" type="text" maxlength="1000"
-                   placeholder="No <author> set" />
-          </label>
-        </div>
-        <div class="metadata-actions">
-          <button id="metadata-clear" type="button" class="metadata-button-secondary">
-            <i class="fa-solid fa-eraser" aria-hidden="true"></i>
-            Clear all
-          </button>
-          <button id="metadata-save" type="button" class="metadata-button-primary">
-            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-            Save
-          </button>
-        </div>
-        <div id="metadata-status" class="metadata-status" role="status" aria-live="polite"></div>
-      </fieldset>
+        <fieldset class="settings-group" id="metadata-group" hidden>
+          <legend>Metadata</legend>
+          <div class="metadata-target" id="metadata-target"></div>
+          <div class="metadata-fields">
+            <label class="metadata-field">
+              <span class="metadata-label">Display name (track)</span>
+              <input id="metadata-track-name" type="text" maxlength="1000"
+                     placeholder="No display name set" />
+            </label>
+            <label class="metadata-field">
+              <span class="metadata-label">Description (track)</span>
+              <textarea id="metadata-track-desc" rows="3" maxlength="1000"
+                        placeholder="No description set"></textarea>
+            </label>
+            <label class="metadata-field">
+              <span class="metadata-label">GPX <code>name</code></span>
+              <input id="metadata-meta-name" type="text" maxlength="1000"
+                     placeholder="No <name> set" />
+            </label>
+            <label class="metadata-field">
+              <span class="metadata-label">GPX <code>description</code></span>
+              <textarea id="metadata-meta-desc" rows="3" maxlength="1000"
+                        placeholder="No <desc> set"></textarea>
+            </label>
+            <label class="metadata-field">
+              <span class="metadata-label">Author</span>
+              <input id="metadata-meta-author" type="text" maxlength="1000"
+                     placeholder="No <author> set" />
+            </label>
+          </div>
+          <div class="metadata-actions">
+            <button id="metadata-clear" type="button" class="metadata-button-secondary">
+              <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+              Clear all
+            </button>
+            <button id="metadata-save" type="button" class="metadata-button-primary">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+              Save
+            </button>
+          </div>
+          <div id="metadata-status" class="metadata-status" role="status" aria-live="polite"></div>
+        </fieldset>
+      </div>
     </div>
   </section>
 

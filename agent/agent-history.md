@@ -1065,3 +1065,38 @@ tests.)
   rather than glossed. `pytest tests/` 110/110; headless
   Chrome confirmed both the settings-tab profile-row fix and
   the sidebar status-line inset/wrap.
+- 2026-07-21 — Commit 21 (`Feat`): **Split the right-side tab
+  into Settings and Edit views.** The single gear button had
+  opened one panel that mingled app settings (base layer, scale
+  bar) with the GPX metadata editor — "tune the map" and "edit
+  the track" in one scrolling list. The rework separates them:
+  the header gets two buttons (gear = Settings, pen-to-square =
+  Edit) that open the *same* right-side panel but show one of two
+  mutually-exclusive views via a `data-view` attribute on
+  `#side-panel` (renamed from `#settings-panel`). Only the active
+  `.tab-view` is not `hidden`. The panel header title swaps
+  ("Settings" / "Edit metadata"). Toggle semantics (confirmed with
+  the human): clicking the active view's button closes the tab;
+  clicking the other swaps; × and Escape close. Selecting a track
+  does **not** auto-open Edit (confirmed) — the Edit view follows
+  the selection only while it is the active view; when the tab is
+  closed the form populates on the next open. Edit with no track
+  selected shows a `#metadata-empty` placeholder instead of a
+  blank form. `selectTrack`, the watcher-refresh path, and the
+  save-success path all guard their metadata rendering on
+  `activeView === "edit"` via a new `renderEditView()` (which
+  reuses the existing `renderMetadataEditor` /
+  `clearMetadataEditor`). CSS: `.header-actions` holds the two
+  buttons; `.settings-panel` → `.side-panel`; `body.settings-open`
+  → `body.tab-open` (the `margin-right: 300px` rule, unchanged in
+  effect — the bug-hunt #11 invariant still holds). Tests: the
+  DOM-ID pin list swaps `settings-button/panel/close` for
+  `tab-button-settings/tab-button-edit/side-panel/side-panel-close/
+  side-panel-title` + `metadata-empty`; the CSS pin `.settings-panel`
+  → `.side-panel`; the FA pin gains `fa-pen-to-square`. No server /
+  endpoint / data-model change. `pytest tests/` 110/110; a
+  headless-Chrome drive confirmed gear→Settings, pen→Edit swap,
+  empty-state with no track, form populates on selection while
+  Edit is open, no reopen on selection while closed, active-button
+  toggle-close, Escape close, × close, the 300px margin + profile
+  bottom-row invariant, and no viewport overflow.
