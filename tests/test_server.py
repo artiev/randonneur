@@ -163,6 +163,46 @@ def test_static_serves_index_html_and_assets() -> None:
     assert ".settings-panel" in css.text  # the settings popover
 
 
+def test_static_serves_favicon() -> None:
+    # The favicon is served from /media/favicon.svg (the static
+    # mount at "/" means the file lives at static/media/favicon.svg
+    # in the package). The <link rel="icon"> in index.html points at
+    # this URL; if it 404s the browser tab falls back to a blank
+    # document icon. Pin the file's existence and SVG-ness.
+    from randonneur.server import static_files_dir
+    client = TestClient(create_app(static_dir=static_files_dir()))
+
+    resp = client.get("/media/favicon.svg")
+    assert resp.status_code == 200
+    # FastAPI's StaticFiles serves SVG as image/svg+xml (or
+    # application/octet-stream on some mounts; the test accepts
+    # either as long as it's not text/plain).
+    assert "svg" in resp.headers["content-type"]
+    assert resp.text.startswith("<?xml")
+    assert "<svg" in resp.text
+
+
+def test_index_links_favicon_and_font_awesome() -> None:
+    # Pin the icon-library wiring so a future move off FA Free (or
+    # a path typo) is caught in CI rather than as a missing-gear-icon
+    # surprise in the browser. The CDN URL is the one recommended by
+    # the Font Awesome Free docs at the time of the 6.5.1 release.
+    from randonneur.server import static_files_dir
+    client = TestClient(create_app(static_dir=static_files_dir()))
+    body = client.get("/").text
+    assert 'rel="icon"' in body
+    assert "/media/favicon.svg" in body
+    assert "font-awesome" in body
+    # The ⚙ glyph in the header button must be an FA icon (the
+    # unicode fallback was removed in commit 5).
+    assert "fa-gear" in body
+    assert "fa-xmark" in body
+    # And the metadata editor's Save/Clear buttons picked up icons
+    # in the same commit.
+    assert "fa-floppy-disk" in body
+    assert "fa-eraser" in body
+
+
 def test_index_contains_required_dom_ids() -> None:
     # The app.js references these IDs; if any of them is renamed in
     # the HTML without updating app.js (or vice versa), the UI silently

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  randonneur favicon — a small mountain peak with a trail marker.
+  Drawn as inline SVG (no binary asset) so the repo stays text-only.
+  The colour palette matches the app's accent (sienna — see the
+  earthy-palette commit) and a paper-map paper tone for the backplate,
+  so the icon looks at home in a tab strip next to OpenTopoMap
+  thumbnails.
+
+  Sizing: rendered at 32×32, scalable to 16/48/180. The viewBox is
+  tight so the silhouette reads at 16px. The trail dashes are
+  hand-placed at the start of the path so they look like a real
+  marked trail coming over the saddle, not a decoration.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Paper-map backplate (rounded square) -->
+  <rect x="0" y="0" width="32" height="32" rx="6" ry="6" fill="#f6efe2"/>
+
+  <!-- Distant peak (lighter, behind) -->
+  <path d="M 4 24 L 12 12 L 16 17 L 20 14 L 28 24 Z"
+        fill="#c9b58a" stroke="#8a6d3b" stroke-width="0.6"
+        stroke-linejoin="round"/>
+
+  <!-- Foreground peak (darker, with snow cap) -->
+  <path d="M 8 24 L 16 9 L 19 14 L 22 12 L 26 24 Z"
+        fill="#a05a2c" stroke="#6b3a1c" stroke-width="0.7"
+        stroke-linejoin="round"/>
+  <!-- Snow cap on the foreground peak -->
+  <path d="M 14.4 12.6 L 16 9 L 17.6 12.6 L 16.7 13 L 16 12.2 L 15.3 13 Z"
+        fill="#ffffff"/>
+
+  <!-- Trail marker (dotted line over the saddle) -->
+  <path d="M 11 24 Q 13 21 16 19 Q 19 17 22 16"
+        fill="none" stroke="#ffffff" stroke-width="1.2"
+        stroke-linecap="round" stroke-dasharray="1.4 1.6"/>
+</svg>

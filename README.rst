@@ -214,6 +214,25 @@ most people name GPX files (after the date or the recording
 device) and the actual trip they recorded.
 
 
+Icons and favicon
+-----------------
+
+The browser tab gets a small hand-drawn mountain-peak favicon
+served at ``/media/favicon.svg`` (an inline SVG in
+``src/randonneur/static/media/``; no binary asset in the repo).
+The file picks up the same paper-map palette as the rest of
+the app so it sits naturally next to OpenTopoMap thumbnails in
+the tab strip.
+
+The UI icons (the ⚙ in the header, the × in the settings tab,
+the Save / Clear all buttons in the metadata editor) come from
+Font Awesome 6 Free via the cdnjs CDN. Free is free for
+commercial and personal use: the icons are CC BY 4.0
+(attribution is in the CSS file's comment header) and the font
+itself is SIL OFL 1.1 (free to redistribute). No env var, no
+license key, no extra dependency.
+
+
 Project layout
 --------------
 

@@ -4,9 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>randonneur</title>
+  <link rel="icon" type="image/svg+xml" href="/media/favicon.svg" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin="" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -25,7 +29,7 @@
       aria-label="Settings"
       aria-expanded="false"
       aria-controls="settings-panel"
-    >⚙</button>
+    ><i class="fa-solid fa-gear" aria-hidden="true"></i></button>
   </header>
 
   <!-- Settings tab. Anchored to the right edge of the viewport; the
@@ -49,7 +53,7 @@
         type="button"
         title="Close"
         aria-label="Close settings"
-      >×</button>
+      ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
     </header>
     <div class="settings-body">
       <fieldset class="settings-group">
@@ -106,9 +110,11 @@
         </div>
         <div class="metadata-actions">
           <button id="metadata-clear" type="button" class="metadata-button-secondary">
+            <i class="fa-solid fa-eraser" aria-hidden="true"></i>
             Clear all
           </button>
           <button id="metadata-save" type="button" class="metadata-button-primary">
+            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
             Save
           </button>
         </div>

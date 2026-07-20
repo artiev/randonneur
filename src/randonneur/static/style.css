@@ -501,11 +501,21 @@ body.settings-open .app-grid {
 .metadata-button-primary,
 .metadata-button-secondary {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   padding: 5px 10px;
   font-size: 12px;
   font-weight: 500;
   border-radius: 4px;
   cursor: pointer;
+}
+
+.metadata-button-primary i,
+.metadata-button-secondary i {
+  font-size: 11px;
+  line-height: 1;
 }
 
 .metadata-button-primary {
