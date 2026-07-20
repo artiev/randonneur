@@ -3,7 +3,53 @@
  * Two-pane layout: sidebar (left) + map (top-right) + profile (bottom).
  * The split between map and profile is fixed (1fr / 240px); making it
  * draggable is cheap to add later.
+ *
+ * Palette: the neutral greys/whites stay (they read as paper, not as
+ * "app chrome"). The accent colours are pulled from CSS custom
+ * properties on :root — the single source of truth for the warm
+ * earth-tone identity. Two variants are documented below; the
+ * committed one is "sienna" (the default). To switch to the
+ * "forest" variant, edit the four --color-accent* values (and the
+ * matching --color-warn if you want a green warning, though the
+ * yellow stays as-is — "parse error" reads as a yellow caution sign
+ * in both worlds). No other file in the project needs to change.
  */
+
+/* ─── Accent palette (sienna variant — default) ──────────────────────────── *
+ *
+ *   --color-accent          : selection / focus (sienna, deep)
+ *   --color-accent-soft     : selection bg, light sienna tint
+ *   --color-accent-strong   : hover state for the strong element
+ *   --color-accent-disabled : disabled state (washed-out sienna)
+ *   --color-success         : save / OK (warm green-brown, not the
+ *                             default green-on-white that screams
+ *                             "Bootstrap submit button")
+ *   --color-error           : error / "missing key" hint
+ *
+ * Forest variant (commented — uncomment to switch):
+ *
+ *   --color-accent: #3b6e3b;            // deep forest green
+ *   --color-accent-soft: #e1efe1;       // pale forest tint
+ *   --color-accent-strong: #2c5a2c;     // hover
+ *   --color-accent-disabled: #aac8aa;   // disabled
+ *   --color-success: #4f7a3a;            // leafy green
+ *   --color-error: #a23a2c;              // bark red
+ *
+ * The sienna values were tuned to read on the white/grey neutrals
+ * at the same luminance band as the original blue (#0969da sits at
+ * L*~38; #a05a2c is L*~37) so the contrast on the track list and
+ * the focus ring stays the same.
+ */
+:root {
+  --color-accent: #a05a2c;
+  --color-accent-soft: #f6e4d4;
+  --color-accent-strong: #8a4a23;
+  --color-accent-disabled: #d4b89a;
+  --color-success: #6b7a3a;            /* olive — works with sienna */
+  --color-success-strong: #586329;
+  --color-success-disabled: #b8c096;
+  --color-error: #a23a2c;
+}
 
 * { box-sizing: border-box; }
 
@@ -105,7 +151,7 @@ button:hover { background: #eaeef2; }
   white-space: nowrap;
 }
 
-.folder-status.error { color: #cf222e; }
+.folder-status.error { color: var(--color-error); }
 
 /* ─── App grid: sidebar | (map / profile) ────────────────────────────────── */
 
@@ -154,8 +200,8 @@ button:hover { background: #eaeef2; }
 .track-list li:hover { background: #f6f8fa; }
 
 .track-list li.selected {
-  background: #ddf4ff;
-  border-left-color: #0969da;
+  background: var(--color-accent-soft);
+  border-left-color: var(--color-accent);
 }
 
 .track-list li .swatch {
@@ -292,8 +338,8 @@ button:hover { background: #eaeef2; }
 .icon-button[aria-expanded="true"] {
   /* Subtle "open" state. The background flips so the user can
      tell which button is the active one when the tab is up. */
-  background: #ddf4ff;
-  border-color: #0969da;
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
 }
 
 /* Settings tab — a full-height column that sits to the right of
@@ -402,7 +448,7 @@ body.settings-open .app-grid {
 
 .settings-source-hint {
   font-size: 11px;
-  color: #cf222e;
+  color: var(--color-error);
 }
 
 .settings-source.disabled {
@@ -482,8 +528,8 @@ body.settings-open .app-grid {
 .metadata-field input:focus,
 .metadata-field textarea:focus {
   outline: none;
-  border-color: #0969da;
-  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.2);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px rgba(160, 90, 44, 0.2);
 }
 
 .metadata-field input::placeholder,
@@ -520,14 +566,14 @@ body.settings-open .app-grid {
 
 .metadata-button-primary {
   color: #ffffff;
-  background: #2da44e;
-  border: 1px solid #2c974b;
+  background: var(--color-success);
+  border: 1px solid var(--color-success-strong);
 }
 
-.metadata-button-primary:hover { background: #2c974b; }
+.metadata-button-primary:hover { background: var(--color-success-strong); }
 .metadata-button-primary:disabled {
-  background: #94d3a2;
-  border-color: #94d3a2;
+  background: var(--color-success-disabled);
+  border-color: var(--color-success-disabled);
   cursor: not-allowed;
 }
 
@@ -546,5 +592,5 @@ body.settings-open .app-grid {
   color: #57606a;
 }
 
-.metadata-status.error { color: #cf222e; }
-.metadata-status.success { color: #2da44e; }
+.metadata-status.error { color: var(--color-error); }
+.metadata-status.success { color: var(--color-success); }

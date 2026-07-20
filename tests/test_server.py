@@ -203,6 +203,38 @@ def test_index_links_favicon_and_font_awesome() -> None:
     assert "fa-eraser" in body
 
 
+def test_css_pins_earthy_palette() -> None:
+    # The accent palette (commit 6) lives in :root custom properties
+    # so the rest of the stylesheet references them. Pinning the
+    # values here means a future palette change is a deliberate test
+    # update, not a silent drift. The hex values are the sienna
+    # variant; the forest variant lives in a comment in style.css.
+    from randonneur.server import static_files_dir
+    client = TestClient(create_app(static_dir=static_files_dir()))
+    css = client.get("/style.css").text
+    # Custom properties are declared in :root and referenced
+    # via var(...) elsewhere. We assert both: the declaration is
+    # present, and at least one usage exists for each.
+    for name, value in (
+        ("--color-accent", "#a05a2c"),
+        ("--color-accent-soft", "#f6e4d4"),
+        ("--color-accent-strong", "#8a4a23"),
+        ("--color-success", "#6b7a3a"),
+        ("--color-error", "#a23a2c"),
+    ):
+        assert f"{name}: {value}" in css, f"{name} not pinned to {value}"
+    # And the references are wired — the track-list selected row,
+    # the icon-button open state, the save button, and the error
+    # status all read from the variables.
+    for ref in (
+        "var(--color-accent)",
+        "var(--color-accent-soft)",
+        "var(--color-success)",
+        "var(--color-error)",
+    ):
+        assert ref in css, f"{ref} not used in style.css"
+
+
 def test_index_contains_required_dom_ids() -> None:
     # The app.js references these IDs; if any of them is renamed in
     # the HTML without updating app.js (or vice versa), the UI silently
