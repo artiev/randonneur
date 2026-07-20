@@ -278,6 +278,11 @@ def test_index_contains_required_dom_ids() -> None:
 
     body = client.get("/").text
     for id_ in ("folder-path",
+                # Sidebar heading + status line. tracks-count is the
+                # "(N)" the JS writes next to "Tracks"; folder-status
+                # is the error / no-folder hint line. Both are written
+                # by app.js and silently break if renamed in the HTML.
+                "tracks-count", "folder-status",
                 "track-list", "errors", "errors-list", "map",
                 "profile", "profile-title", "profile-stats",
                 # Settings tab. Pinning these IDs means a rename in

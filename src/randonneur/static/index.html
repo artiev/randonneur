@@ -20,7 +20,6 @@
       <span class="folder-info-label">Folder</span>
       <span id="folder-path" class="folder-path" aria-live="polite"></span>
     </div>
-    <div class="folder-status" id="folder-status" aria-live="polite"></div>
     <button
       id="settings-button"
       class="icon-button"
@@ -125,7 +124,8 @@
 
   <main class="app-grid">
     <aside class="sidebar">
-      <h2>Tracks</h2>
+      <h2 id="tracks-heading">Tracks <span class="tracks-count" id="tracks-count" aria-hidden="true"></span></h2>
+      <div id="folder-status" class="folder-status" aria-live="polite"></div>
       <ul id="track-list" class="track-list" aria-label="GPX tracks">
         <li class="empty-hint">No folder loaded.</li>
       </ul>

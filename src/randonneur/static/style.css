@@ -160,13 +160,20 @@ button {
 button:hover { background: #eaeef2; }
 
 .folder-status {
+  /* Sits in the sidebar between the "Tracks" heading and the track
+     list. Inset 12px to align with the heading and the list items,
+     and wraps rather than truncates — the "No folder configured"
+     hint and network-error messages are long and must be fully
+     readable in the 240px sidebar. Empty in the happy path (no
+     error), so :empty drops the bottom margin and it takes no
+     space when there's nothing to say. */
+  margin: 0 12px 8px;
   font-size: 12px;
   color: #57606a;
-  min-width: 0;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
+  line-height: 1.4;
 }
+
+.folder-status:empty { margin: 0; }
 
 .folder-status.error { color: var(--color-error); }
 
@@ -204,6 +211,17 @@ button:hover { background: #eaeef2; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #57606a;
+}
+
+.tracks-count {
+  /* Track count in the sidebar heading. Same uppercase treatment
+     as the "TRACKS" label, but a touch dimmer and font-weight-
+     normal so the number doesn't compete with the label. The
+     JS sets this to "(2)" / "" — an empty value leaves the
+     heading as a bare "TRACKS" so the empty state stays clean. */
+  font-weight: 400;
+  color: #8c959f;
+  margin-left: 2px;
 }
 
 .track-list {
@@ -401,11 +419,20 @@ button:hover { background: #eaeef2; }
   transform: translateX(0);
 }
 
-/* When the tab is open, the .app-grid grows a third column for it.
-   The CSS variable lets the JS toggle it without hard-coding the
-   column count in two places. */
+/* When the tab is open, the .app-grid shrinks on the right to
+   make room for the fixed-positioned tab. Earlier this rule
+   changed grid-template-columns to 240px 1fr 300px, which (a)
+   didn't actually do anything useful because the tab is fixed-
+   positioned and doesn't participate in the grid, and (b) broke
+   the profile pane — the third column caused .profile-pane (at
+   grid-area: profile) to auto-flow into the new right column
+   instead of staying in the bottom row, so the elevation graph
+   visually "disappeared" to the top of the right column. A
+   right margin on the whole grid is the right shape: the
+   sidebar + map + profile all reflow uniformly to the left of
+   the tab. */
 body.settings-open .app-grid {
-  grid-template-columns: 240px 1fr 300px;
+  margin-right: 300px;
 }
 
 .settings-header {

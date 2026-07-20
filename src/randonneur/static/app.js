@@ -48,6 +48,7 @@
   const folderPath = document.getElementById("folder-path");
   const folderStatus = document.getElementById("folder-status");
   const trackList = document.getElementById("track-list");
+  const tracksCount = document.getElementById("tracks-count");
   const errorsSection = document.getElementById("errors");
   const errorsList = document.getElementById("errors-list");
   const mapEl = document.getElementById("map");
@@ -130,6 +131,10 @@
 
   function renderTrackList() {
     trackList.innerHTML = "";
+    // Update the count next to the "Tracks" header. Empty string
+    // when there's no folder (avoids a lonely "(0)" before the
+    // user has loaded anything).
+    tracksCount.textContent = tracks.length > 0 ? `(${tracks.length})` : "";
     if (tracks.length === 0) {
       const li = document.createElement("li");
       li.className = "empty-hint";
@@ -178,6 +183,10 @@
   }
 
   function setStatus(text, isError = false) {
+    // Surfaces folder-load status (errors, "no folder configured")
+    // in the sidebar's folder-status line. The right-side folder
+    // status line in the header is gone — the track count moved
+    // to the sidebar header.
     folderStatus.textContent = text;
     folderStatus.classList.toggle("error", isError);
   }
@@ -921,10 +930,14 @@
         clearMetadataEditor();
       }
       if (body.path) {
-        setStatus(
-          `${body.path}: ${body.tracks.length} track(s)` +
-          (body.errors.length ? `, ${body.errors.length} error(s)` : "")
-        );
+        // Path lives in the header; track count lives in the
+        // sidebar heading. The sidebar's folder-status only surfaces
+        // something on error, so it stays empty in the happy path.
+        if (body.errors.length) {
+          setStatus(`${body.errors.length} parse error(s)`, true);
+        } else {
+          setStatus("");
+        }
       } else {
         setStatus("No folder configured — start the server with --directory <path>.");
       }
