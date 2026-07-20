@@ -65,6 +65,55 @@
           <span>Show scale bar</span>
         </label>
       </fieldset>
+      <fieldset class="settings-group" id="metadata-group" hidden>
+        <!--
+          Metadata editor for the currently selected track. Populated
+          by renderMetadataEditor() from the TrackSummary's metadata
+          fields. The "Save" button POSTs the edited fields to
+          PATCH /api/tracks/{id}/metadata; on success the cache is
+          replaced and the track list + map update in place. The
+          file is rewritten on the server (atomic tmp + os.replace)
+          so a crash mid-save leaves the original GPX untouched.
+        -->
+        <legend>Metadata</legend>
+        <div class="metadata-target" id="metadata-target"></div>
+        <div class="metadata-fields">
+          <label class="metadata-field">
+            <span class="metadata-label">Display name (track)</span>
+            <input id="metadata-track-name" type="text" maxlength="1000"
+                   placeholder="No display name set" />
+          </label>
+          <label class="metadata-field">
+            <span class="metadata-label">Description (track)</span>
+            <textarea id="metadata-track-desc" rows="3" maxlength="1000"
+                      placeholder="No description set"></textarea>
+          </label>
+          <label class="metadata-field">
+            <span class="metadata-label">GPX <code>name</code></span>
+            <input id="metadata-meta-name" type="text" maxlength="1000"
+                   placeholder="No <name> set" />
+          </label>
+          <label class="metadata-field">
+            <span class="metadata-label">GPX <code>description</code></span>
+            <textarea id="metadata-meta-desc" rows="3" maxlength="1000"
+                      placeholder="No <desc> set"></textarea>
+          </label>
+          <label class="metadata-field">
+            <span class="metadata-label">Author</span>
+            <input id="metadata-meta-author" type="text" maxlength="1000"
+                   placeholder="No <author> set" />
+          </label>
+        </div>
+        <div class="metadata-actions">
+          <button id="metadata-clear" type="button" class="metadata-button-secondary">
+            Clear all
+          </button>
+          <button id="metadata-save" type="button" class="metadata-button-primary">
+            Save
+          </button>
+        </div>
+        <div id="metadata-status" class="metadata-status" role="status" aria-live="polite"></div>
+      </fieldset>
     </div>
   </section>
 

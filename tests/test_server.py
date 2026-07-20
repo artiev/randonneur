@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from randonneur import gpx_loader
 from randonneur.server import create_app
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -64,7 +65,9 @@ def test_track_summary_shape_is_stable(make_client, tmp_path: Path) -> None:
     body = client.get("/api/folder").json()
     track = body["tracks"][0]
     assert set(track.keys()) == {
-        "id", "name", "color", "points", "distance_km", "elev_gain_m", "bbox"
+        "id", "name", "color", "points", "distance_km", "elev_gain_m", "bbox",
+        "metadata_name", "metadata_desc", "metadata_author",
+        "track_name", "track_desc",
     }
     assert isinstance(track["id"], str) and len(track["id"]) == 12
     assert track["color"].startswith("#")
@@ -177,7 +180,15 @@ def test_index_contains_required_dom_ids() -> None:
                 # nothing happens" in the browser. The tab no longer
                 # uses a backdrop (commit 3) so it's not pinned.
                 "settings-button", "settings-panel",
-                "settings-close", "settings-sources", "settings-scale"):
+                "settings-close", "settings-sources", "settings-scale",
+                # Metadata editor (commit 4). Same rationale: a
+                # rename without updating app.js breaks the editor
+                # silently in the browser.
+                "metadata-group", "metadata-target",
+                "metadata-track-name", "metadata-track-desc",
+                "metadata-meta-name", "metadata-meta-desc",
+                "metadata-meta-author",
+                "metadata-save", "metadata-clear", "metadata-status"):
         assert f'id="{id_}"' in body, f"missing id={id_!r} in index.html"
 
 
@@ -193,7 +204,9 @@ def test_track_detail_returns_full_polyline(make_client, tmp_path: Path) -> None
 
     detail = client.get(f"/api/tracks/{track_id}").json()
     assert set(detail.keys()) == {
-        "id", "name", "color", "distance_km", "elev_gain_m", "bbox", "points"
+        "id", "name", "color", "distance_km", "elev_gain_m", "bbox", "points",
+        "metadata_name", "metadata_desc", "metadata_author",
+        "track_name", "track_desc",
     }
     # The multi_segment fixture has 5 points; the polyline must come back in order.
     assert len(detail["points"]) == 5
@@ -324,6 +337,117 @@ def test_profile_and_track_detail_share_cache(make_client, tmp_path: Path) -> No
     assert detail["id"] == profile["id"]
     assert detail["color"] == profile["color"]
     assert detail["name"] == profile["name"]
+
+
+# ─── /api/tracks/{id}/metadata endpoint ──────────────────────────────────────
+
+
+def test_metadata_endpoint_updates_file_and_cache(make_client, tmp_path: Path) -> None:
+    # The endpoint must (1) write to disk, (2) refresh the in-memory
+    # cache so a follow-up /api/tracks/{id} returns the new values,
+    # and (3) return the new values in the response body.
+    client = make_client(tmp_path)
+    (tmp_path / "with_metadata.gpx").write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+    track_id = client.get("/api/folder").json()["tracks"][0]["id"]
+
+    resp = client.patch(
+        f"/api/tracks/{track_id}/metadata",
+        json={"metadata_name": "Edited name", "track_desc": "Edited trk desc"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["metadata_name"] == "Edited name"
+    assert body["track_desc"] == "Edited trk desc"
+    # Untouched fields are preserved on the wire and on disk.
+    assert body["metadata_author"] == "Some Hiker"
+
+    # Re-fetch via /api/tracks/{id} and confirm the cache is fresh.
+    detail = client.get(f"/api/tracks/{track_id}").json()
+    assert detail["metadata_name"] == "Edited name"
+    assert detail["track_desc"] == "Edited trk desc"
+    assert detail["metadata_author"] == "Some Hiker"
+
+    # And the file on disk round-trips through gpxpy.
+    fresh = gpx_loader.parse(tmp_path / "with_metadata.gpx")
+    assert fresh.metadata_name == "Edited name"
+    assert fresh.track_desc == "Edited trk desc"
+    assert fresh.metadata_author == "Some Hiker"
+
+
+def test_metadata_endpoint_empty_string_clears_field(make_client, tmp_path: Path) -> None:
+    # The editor's "Clear" button sends ""; the server must interpret
+    # that as remove (no <name> in the file). The with_metadata fixture
+    # starts with metadata_name set, so this is a round-trip from
+    # populated to empty.
+    client = make_client(tmp_path)
+    (tmp_path / "with_metadata.gpx").write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+    track_id = client.get("/api/folder").json()["tracks"][0]["id"]
+
+    resp = client.patch(
+        f"/api/tracks/{track_id}/metadata",
+        json={"metadata_name": "", "track_name": ""},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["metadata_name"] is None
+    assert body["track_name"] is None
+    # Re-fetch and confirm the file is clear.
+    fresh = gpx_loader.parse(tmp_path / "with_metadata.gpx")
+    assert fresh.metadata_name is None
+    assert fresh.track_name is None
+
+
+def test_metadata_endpoint_404_for_unknown_id(client: TestClient) -> None:
+    resp = client.patch(
+        "/api/tracks/does-not-exist/metadata",
+        json={"metadata_name": "x"},
+    )
+    assert resp.status_code == 404
+    assert "unknown track" in resp.json()["detail"]
+
+
+def test_metadata_endpoint_rejects_oversized_field(make_client, tmp_path: Path) -> None:
+    # The 1000-char cap is enforced by the pydantic validator; the
+    # error must surface as 422, not 500.
+    client = make_client(tmp_path)
+    (tmp_path / "with_metadata.gpx").write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+    track_id = client.get("/api/folder").json()["tracks"][0]["id"]
+
+    resp = client.patch(
+        f"/api/tracks/{track_id}/metadata",
+        json={"metadata_desc": "x" * 1001},
+    )
+    assert resp.status_code == 422
+
+
+def test_metadata_endpoint_empty_body_is_a_noop(make_client, tmp_path: Path) -> None:
+    # PATCH with no fields = "send the file back unchanged". Useful
+    # if a future client wants to confirm round-trip without changing
+    # anything. The file is rewritten but is byte-equivalent after
+    # re-parse.
+    client = make_client(tmp_path)
+    (tmp_path / "with_metadata.gpx").write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+    track_id = client.get("/api/folder").json()["tracks"][0]["id"]
+    pre = gpx_loader.parse(tmp_path / "with_metadata.gpx")
+
+    resp = client.patch(f"/api/tracks/{track_id}/metadata", json={})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["metadata_name"] == pre.metadata_name
+    assert body["track_name"] == pre.track_name
+    assert body["metadata_author"] == pre.metadata_author
+
+
+def test_folder_list_includes_metadata_fields(make_client, tmp_path: Path) -> None:
+    # The editor populates from the folder list, not from a per-track
+    # fetch — confirm the summary response ships the new fields.
+    client = make_client(tmp_path)
+    (tmp_path / "with_metadata.gpx").write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+    body = client.get("/api/folder").json()
+    t = body["tracks"][0]
+    assert t["metadata_name"] == "Tour du Mont Blanc"
+    assert t["metadata_author"] == "Some Hiker"
+    assert t["track_name"] == "Day 1: Les Houches to Les Contamines"
 
 
 # ─── Tile endpoint ───────────────────────────────────────────────────────────

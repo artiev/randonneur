@@ -59,6 +59,19 @@
   const settingsClose = document.getElementById("settings-close");
   const settingsSources = document.getElementById("settings-sources");
   const settingsScale = document.getElementById("settings-scale");
+  // Metadata editor. The editor is hidden until a track is selected
+  // (commit 4: the fieldset is shown by renderMetadataEditor, hidden
+  // by clearMetadataEditor when the selection clears).
+  const metadataGroup = document.getElementById("metadata-group");
+  const metadataTarget = document.getElementById("metadata-target");
+  const metadataTrackName = document.getElementById("metadata-track-name");
+  const metadataTrackDesc = document.getElementById("metadata-track-desc");
+  const metadataMetaName = document.getElementById("metadata-meta-name");
+  const metadataMetaDesc = document.getElementById("metadata-meta-desc");
+  const metadataMetaAuthor = document.getElementById("metadata-meta-author");
+  const metadataSave = document.getElementById("metadata-save");
+  const metadataClear = document.getElementById("metadata-clear");
+  const metadataStatus = document.getElementById("metadata-status");
 
   // ─── Map (Leaflet) ───────────────────────────────────────────────────────
 
@@ -433,9 +446,11 @@
       // hover on the profile doesn't have to lazy-create the marker.
       const detail = trackDetails.get(id);
       if (detail) ensureMapCrosshair(id, detail.color);
+      renderMetadataEditor(id);
     } else {
       clearProfile();
       hideProfileCrosshair();
+      clearMetadataEditor();
     }
   }
 
@@ -679,6 +694,130 @@
     }
   }
 
+  // ─── Metadata editor ───────────────────────────────────────────────────────
+  // ─── (lives in the right-side settings tab; commit 4) ──────────────────────
+
+  function renderMetadataEditor(trackId) {
+    // Populate the form from the folder list's TrackSummary (the
+    // metadata fields are inlined on the summary so we don't need a
+    // second fetch). The file stem is shown at the top as a "you're
+    // editing…" reminder; the form fields show the GPX-side values.
+    //
+    // The status line is left alone here — it's owned by the
+    // save/clear flow, not the render flow. (Without this guard, the
+    // watcher's debounced "changed" event after a save would wipe
+    // the "Saved." message before the user could see it.)
+    const summary = tracks.find((t) => t.id === trackId);
+    if (!summary) {
+      clearMetadataEditor();
+      return;
+    }
+    metadataGroup.hidden = false;
+    metadataTarget.innerHTML = "";
+    const stem = document.createElement("span");
+    stem.append("Editing: ");
+    const strong = document.createElement("strong");
+    strong.textContent = summary.name + ".gpx";
+    stem.appendChild(strong);
+    metadataTarget.appendChild(stem);
+    // The form is the source of truth for the editor; the server's
+    // last-saved values seed it. Empty string vs placeholder: the
+    // input's placeholder is the dim hint for an empty field; the
+    // value is the actual content. (gpxpy normalises missing
+    // elements to None, which the API surfaces as null, which becomes
+    // undefined in JS — we use "" so the user sees a clear input
+    // rather than the placeholder when the field is genuinely empty
+    // after a clear.)
+    metadataTrackName.value = summary.track_name || "";
+    metadataTrackDesc.value = summary.track_desc || "";
+    metadataMetaName.value = summary.metadata_name || "";
+    metadataMetaDesc.value = summary.metadata_desc || "";
+    metadataMetaAuthor.value = summary.metadata_author || "";
+  }
+
+  function clearMetadataEditor() {
+    // Hide the fieldset and reset the form. Called when the user
+    // deselects (clicks the same row again, or refreshes) so the
+    // editor doesn't show stale data for a track that's no longer
+    // focused. Also clears the status line — the success/fail
+    // message is no longer meaningful once the editor is gone.
+    metadataGroup.hidden = true;
+    metadataTrackName.value = "";
+    metadataTrackDesc.value = "";
+    metadataMetaName.value = "";
+    metadataMetaDesc.value = "";
+    metadataMetaAuthor.value = "";
+    metadataStatus.textContent = "";
+    metadataStatus.classList.remove("error", "success");
+  }
+
+  async function saveMetadata() {
+    // PATCH the edited fields. Each field is sent as the trimmed
+    // string the user typed, or "" if they cleared it (the server
+    // treats "" as remove). Empty-after-trim is sent as "" too —
+    // there's no "don't touch" affordance for a single field, since
+    // the only no-op case is "the user didn't open the editor", and
+    // the Save button wouldn't have been pressed in that case.
+    if (!selectedTrackId) return;
+    const id = selectedTrackId;
+    const body = {
+      track_name: metadataTrackName.value.trim(),
+      track_desc: metadataTrackDesc.value.trim(),
+      metadata_name: metadataMetaName.value.trim(),
+      metadata_desc: metadataMetaDesc.value.trim(),
+      metadata_author: metadataMetaAuthor.value.trim(),
+    };
+    metadataSave.disabled = true;
+    metadataStatus.textContent = "Saving…";
+    metadataStatus.classList.remove("error", "success");
+    try {
+      const resp = await fetch(
+        `/api/tracks/${encodeURIComponent(id)}/metadata`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!resp.ok) {
+        const detail = (await resp.json().catch(() => ({}))).detail
+          || `HTTP ${resp.status}`;
+        metadataStatus.textContent = `Save failed: ${detail}`;
+        metadataStatus.classList.add("error");
+        return;
+      }
+      // Server returned the updated summary. Replace the entry in
+      // the local tracks array so the next /api/folder / re-render
+      // shows the new values; we also re-render the editor so the
+      // form is in sync with what's now on disk.
+      const updated = await resp.json();
+      const idx = tracks.findIndex((t) => t.id === id);
+      if (idx >= 0) tracks[idx] = updated;
+      renderMetadataEditor(id);
+      metadataStatus.textContent = "Saved.";
+      metadataStatus.classList.add("success");
+    } catch (err) {
+      metadataStatus.textContent = `Save failed: ${err.message}`;
+      metadataStatus.classList.add("error");
+    } finally {
+      metadataSave.disabled = false;
+    }
+  }
+
+  metadataSave.addEventListener("click", saveMetadata);
+  metadataClear.addEventListener("click", () => {
+    // Empty the form fields. The user still has to click Save to
+    // persist the clear; we don't auto-save (clearing is destructive
+    // and worth a confirmation click).
+    metadataTrackName.value = "";
+    metadataTrackDesc.value = "";
+    metadataMetaName.value = "";
+    metadataMetaDesc.value = "";
+    metadataMetaAuthor.value = "";
+    metadataStatus.textContent = "Cleared (click Save to persist)";
+    metadataStatus.classList.remove("error", "success");
+  });
+
   // ─── Folder loading ──────────────────────────────────────────────────────
 
   function connectHotReload() {
@@ -773,8 +912,13 @@
       drawAllTracks();
       if (selectedTrackId) {
         fetchProfile(selectedTrackId);
+        // Re-render the metadata editor from the (potentially
+        // updated) folder list. If the selection was dropped above,
+        // this branch is skipped and the editor is cleared below.
+        renderMetadataEditor(selectedTrackId);
       } else {
         clearProfile();
+        clearMetadataEditor();
       }
       if (body.path) {
         setStatus(

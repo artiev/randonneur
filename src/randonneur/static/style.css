@@ -419,3 +419,122 @@ body.settings-open .app-grid {
   padding: 4px 0;
   cursor: pointer;
 }
+
+/* Metadata editor. Lives in the right-side tab (commit 3) and
+   populates when a track is selected. Two text inputs and three
+   textareas, each with a 1000-char cap matching the server-side
+   validator. "Save" POSTs the edited fields; "Clear all" empties
+   the form (the user then clicks Save to persist the clear). */
+.metadata-target {
+  font-size: 12px;
+  color: #57606a;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eaeef2;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metadata-target strong {
+  color: #1f2328;
+  font-weight: 600;
+}
+
+.metadata-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.metadata-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metadata-label {
+  font-size: 11px;
+  color: #57606a;
+}
+
+.metadata-label code {
+  font-size: 10px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.metadata-field input,
+.metadata-field textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: #1f2328;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  padding: 4px 6px;
+  resize: vertical;
+}
+
+.metadata-field input:focus,
+.metadata-field textarea:focus {
+  outline: none;
+  border-color: #0969da;
+  box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.2);
+}
+
+.metadata-field input::placeholder,
+.metadata-field textarea::placeholder {
+  color: #8c959f;
+  font-style: italic;
+}
+
+.metadata-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.metadata-button-primary,
+.metadata-button-secondary {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.metadata-button-primary {
+  color: #ffffff;
+  background: #2da44e;
+  border: 1px solid #2c974b;
+}
+
+.metadata-button-primary:hover { background: #2c974b; }
+.metadata-button-primary:disabled {
+  background: #94d3a2;
+  border-color: #94d3a2;
+  cursor: not-allowed;
+}
+
+.metadata-button-secondary {
+  color: #1f2328;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+}
+
+.metadata-button-secondary:hover { background: #eaeef2; }
+
+.metadata-status {
+  margin-top: 6px;
+  font-size: 11px;
+  min-height: 14px;
+  color: #57606a;
+}
+
+.metadata-status.error { color: #cf222e; }
+.metadata-status.success { color: #2da44e; }

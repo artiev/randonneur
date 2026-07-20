@@ -115,8 +115,11 @@ Once a folder is loaded:
 - **Edit a GPX file in the folder and save it** — the UI re-loads
   the folder and updates the track list / map / profile in place.
   No page refresh.
-- **Click ⚙ in the header** to switch the base layer or toggle the
-  scale bar. See `Base layer and tiles`_ below.
+- **Click ⚙ in the header** to switch the base layer, toggle the
+  scale bar, or edit the selected track's metadata (the GPX
+  ``<name>`` / ``<desc>`` / ``<author>`` and the per-track
+  ``<trk><name>`` / ``<trk><desc>``). See `Base layer and tiles`_
+  and `Metadata editing`_ below.
 
 
 What you get
@@ -178,6 +181,37 @@ OpenTopoMap's policy is "≤ 1 request per second per client". The
 built-in rate limiter smooths bursts to that mean; in practice
 the on-disk cache means the limiter only matters during the first
 load of a brand-new area.
+
+
+Metadata editing
+----------------
+
+The right-side settings tab (click ⚙) has a **Metadata** section
+that appears when a track is selected. It surfaces the five
+human-readable fields a GPX 1.1 file can carry:
+
+- ``<metadata><name>`` and ``<metadata><desc>`` — the top-level
+  trip name and description.
+- ``<metadata><author><name>`` — the trip author.
+- ``<trk><name>`` and ``<trk><desc>`` — the per-track display
+  name and description (randonneur shows the first ``<trk>`` of
+  a multi-track file; that's the one a typical recording has).
+
+Each field has a 1000-character cap, both client-side and in the
+``PATCH /api/tracks/{id}/metadata`` endpoint. Save writes the
+file atomically (a ``tmp + os.replace`` so a crash mid-write
+leaves the original on disk), refreshes the in-memory track
+cache, and re-fetches the folder list so other open browser
+windows see the change via the watcher's hot-reload channel.
+**Clear all** empties the form (a second click on Save is needed
+to persist — clearing is destructive and worth a confirmation
+click).
+
+The file stem (e.g. ``tour1.gpx``) is what's used as the
+sidebar's per-track label; the GPX ``<name>`` is the display name
+that lives in the metadata editor. This separation matches how
+most people name GPX files (after the date or the recording
+device) and the actual trip they recorded.
 
 
 Project layout

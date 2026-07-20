@@ -34,7 +34,18 @@ class Point:
 
 @dataclass(frozen=True)
 class Track:
-    """A parsed GPX track, flattened across all segments of all tracks in the file."""
+    """A parsed GPX track, flattened across all segments of all tracks in the file.
+
+    The display-layer metadata (``track_name`` / ``track_desc`` /
+    ``metadata_name`` / ``metadata_desc`` / ``metadata_author``) is read
+    at parse time and shipped on the wire so the UI can show the
+    current values without a second parse. ``name`` stays as the file
+    stem — the sidebar uses it, the polyline tooltip uses it, and it's
+    the only name that's guaranteed to be non-empty (every file has a
+    stem; not every file has a ``<metadata>`` or ``<trk><name>``). The
+    GPX-side display name lives in ``track_name`` and is shown in the
+    metadata editor only.
+    """
 
     id: str  # stable hash of the absolute path
     name: str  # filename stem
@@ -44,6 +55,15 @@ class Track:
     bbox: tuple[float, float, float, float]  # (west, south, east, north)
     distance_km: float
     elev_gain_m: float  # sum of positive elevation deltas only
+    # GPX metadata (from <metadata>). The first <trk>'s <name>/<desc>
+    # are exposed as track_name/track_desc; multi-track files would
+    # need an extra API call to enumerate, but every fixture in this
+    # project is single-track.
+    metadata_name: str | None = None
+    metadata_desc: str | None = None
+    metadata_author: str | None = None
+    track_name: str | None = None
+    track_desc: str | None = None
 
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -157,6 +177,12 @@ def parse(path: Path) -> Track:
         gpx = gpxpy.parse(f)
     points = _flatten_points(gpx)
     track_id = _track_id(path)
+    # GPX display metadata. We grab the first <trk> only — multi-track
+    # files are rare in practice (and the loader already flattens
+    # across them), so "first trk wins" is the obvious rule. None vs
+    # empty-string: gpxpy normalises a missing element to None, so an
+    # empty input round-trips as None — we follow that.
+    first_track = gpx.tracks[0] if gpx.tracks else None
     return Track(
         id=track_id,
         name=path.stem,
@@ -172,4 +198,120 @@ def parse(path: Path) -> Track:
         # percent and that's fine.
         distance_km=gpx.length_3d() / 1000.0,
         elev_gain_m=_elev_gain(points),
+        metadata_name=gpx.name or None,
+        metadata_desc=gpx.description or None,
+        metadata_author=gpx.author_name or None,
+        track_name=(first_track.name if first_track else None) or None,
+        track_desc=(first_track.description if first_track else None) or None,
     )
+
+
+# Cap on each metadata field. A 1000-char description is already a
+# wall of text; anything longer is almost certainly a paste error, and
+# a malicious client could OOM the server by sending megabytes. 1000
+# is generous and matches the limit the metadata editor's <textarea>
+# uses as a maxlength hint.
+_METADATA_FIELD_MAX = 1000
+
+
+def _set_or_clear(obj: object, attr: str, value: str | None) -> None:
+    """Assign ``value`` to ``obj.attr`` if non-None; assign None otherwise.
+
+    gpxpy 1.6.x's ``__delattr__`` is overzealous and crashes on
+    ``del gpx.name`` for fields that were never set, so we use the
+    ``None``-as-clear convention that gpxpy's ``to_xml`` honours (an
+    attribute set to None is omitted from the output). An empty
+    string still emits an empty element — the editor's "clear"
+    affordance therefore goes through this path, not a direct
+    ``""`` assignment.
+    """
+    setattr(obj, attr, value)
+
+
+def write_metadata(
+    path: Path,
+    *,
+    metadata_name: str | None = None,
+    metadata_desc: str | None = None,
+    metadata_author: str | None = None,
+    track_name: str | None = None,
+    track_desc: str | None = None,
+) -> Track:
+    """Update the metadata blocks of ``path`` and return the re-parsed Track.
+
+    The path is read, the four fields are written into the parsed
+    ``GPX`` (gpxpy's setters know how to emit the right element), and
+    the result is serialised via ``to_xml()`` and atomically replaced
+    on disk (``tmp + os.replace`` so a crash mid-write can't truncate
+    the user's file). The new content is then re-parsed so the caller
+    has a fresh :class:`Track` to put in the cache.
+
+    All five parameters are optional; the caller typically sends only
+    the fields the user actually edited. An empty string is normalised
+    to "remove"; ``None`` is a no-op for the field.
+
+    Raises :class:`gpxpy.gpx.GPXException` on malformed input; any
+    string longer than ``_METADATA_FIELD_MAX`` raises :class:`ValueError`.
+    """
+    for value, field in (
+        (metadata_name, "metadata_name"),
+        (metadata_desc, "metadata_desc"),
+        (metadata_author, "metadata_author"),
+        (track_name, "track_name"),
+        (track_desc, "track_desc"),
+    ):
+        if value is not None and len(value) > _METADATA_FIELD_MAX:
+            raise ValueError(
+                f"{field} is {len(value)} chars; max is {_METADATA_FIELD_MAX}"
+            )
+
+    with open(path, "rb") as f:
+        gpx = gpxpy.parse(f)
+
+    # Top-level <metadata>. gpxpy exposes ``name`` / ``description`` /
+    # ``author_name`` as direct attributes; the author element is
+    # created lazily when ``author_name`` is set. We normalise the
+    # string-or-None contract here: the PATCH endpoint treats "" as
+    # "clear", and we want that to land as a None assignment on the
+    # gpxpy object so the element is omitted from to_xml() output
+    # (assigning "" would emit an empty <name>, which is the wrong
+    # shape — it's not the same as a missing field).
+    if metadata_name is not None:
+        _set_or_clear(gpx, "name", metadata_name or None)
+    if metadata_desc is not None:
+        _set_or_clear(gpx, "description", metadata_desc or None)
+    if metadata_author is not None:
+        # Author is a nested element; gpxpy auto-creates an Author
+        # object on first assignment to ``author_name``. Same set-or-
+        # clear rule: empty string normalises to None, which removes
+        # the <author> block from the output.
+        gpx.author_name = metadata_author or None
+
+    if gpx.tracks:
+        first = gpx.tracks[0]
+        if track_name is not None:
+            _set_or_clear(first, "name", track_name or None)
+        if track_desc is not None:
+            _set_or_clear(first, "description", track_desc or None)
+
+    # Atomic write: tmp + os.replace. A crash between the tmp write
+    # and the replace leaves the user's file untouched; the tmp file
+    # may dangle but is small and gets overwritten on the next save.
+    import os
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(prefix=".randonneur-", suffix=".gpx", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(gpx.to_xml())
+        os.replace(tmp, path)
+    except BaseException:
+        # Clean up the tmp on any failure (parse-error, disk-full,
+        # permission). The user's file is the one we must protect.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+    return parse(path)

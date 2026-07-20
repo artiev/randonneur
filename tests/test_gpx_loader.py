@@ -130,3 +130,116 @@ def test_parse_distance_is_positive() -> None:
     # and produced a sensible magnitude.
     assert track.distance_km > 0.0
     assert track.distance_km < 10.0  # 5 nearby points can't be 10 km
+
+
+# ─── metadata ────────────────────────────────────────────────────────────────
+
+
+def test_parse_extracts_metadata_from_top_level_block() -> None:
+    # with_metadata.gpx has a <metadata> with <name>, <desc>, and
+    # <author><name>. The dataclass must surface all three.
+    track = gpx_loader.parse(FIXTURES / "with_metadata.gpx")
+    assert track.metadata_name == "Tour du Mont Blanc"
+    assert track.metadata_desc is not None and "France" in track.metadata_desc
+    assert track.metadata_author == "Some Hiker"
+
+
+def test_parse_extracts_first_trk_name_and_desc() -> None:
+    # We grab the *first* <trk>'s <name>/<desc> (the loader flattens
+    # multi-track files into one Track). Multi-track fixtures are
+    # out of scope; single-track is the rule the editor follows.
+    track = gpx_loader.parse(FIXTURES / "with_metadata.gpx")
+    assert track.track_name == "Day 1: Les Houches to Les Contamines"
+    assert track.track_desc is not None and "Voza" in track.track_desc
+
+
+def test_parse_metadata_defaults_to_none_when_absent() -> None:
+    # The original multi_segment fixture has no <metadata> block and
+    # no <author>. The new fields must default to None, not "" (the
+    # PATCH endpoint treats "" as "clear", which would round-trip
+    # wrongly if the field started as None).
+    track = gpx_loader.parse(FIXTURES / "multi_segment.gpx")
+    assert track.metadata_name is None
+    assert track.metadata_desc is None
+    assert track.metadata_author is None
+    assert track.track_name == "Multi-segment test"  # <trk><name> is set
+    assert track.track_desc is None
+
+
+def test_write_metadata_updates_file_and_reparses(tmp_path: Path) -> None:
+    # write_metadata returns a fresh Track; the file on disk is
+    # updated so a subsequent parse() returns the same values. Round-
+    # trip is the contract.
+    src = FIXTURES / "with_metadata.gpx"
+    target = tmp_path / "rt.gpx"
+    target.write_bytes(src.read_bytes())
+
+    updated = gpx_loader.write_metadata(
+        target,
+        metadata_name="New name",
+        track_desc="New trk desc",
+    )
+    assert updated.metadata_name == "New name"
+    assert updated.track_desc == "New trk desc"
+    # Other fields are untouched when not sent.
+    assert updated.metadata_author == "Some Hiker"
+    # Re-parsing the file from disk must agree.
+    again = gpx_loader.parse(target)
+    assert again.metadata_name == "New name"
+    assert again.track_desc == "New trk desc"
+    assert again.metadata_author == "Some Hiker"
+
+
+def test_write_metadata_clear_with_empty_string(tmp_path: Path) -> None:
+    # Empty string means "remove" (no <name> in the output). The
+    # editor's "Clear" button sends ""; this is the rule.
+    target = tmp_path / "clear.gpx"
+    target.write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+
+    updated = gpx_loader.write_metadata(
+        target,
+        metadata_name="",
+        track_name="",
+    )
+    assert updated.metadata_name is None
+    assert updated.track_name is None
+    # Other fields are unaffected.
+    assert updated.metadata_author == "Some Hiker"
+
+
+def test_write_metadata_unset_field_is_noop(tmp_path: Path) -> None:
+    # None means "don't touch this field" (the editor sends only the
+    # fields the user edited). Sending only metadata_name must not
+    # clobber the existing author.
+    target = tmp_path / "noop.gpx"
+    target.write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+
+    updated = gpx_loader.write_metadata(target, metadata_name="Only name changed")
+    assert updated.metadata_name == "Only name changed"
+    assert updated.metadata_desc is not None and "France" in updated.metadata_desc
+    assert updated.metadata_author == "Some Hiker"
+    assert updated.track_name == "Day 1: Les Houches to Les Contamines"
+
+
+def test_write_metadata_rejects_oversized_field(tmp_path: Path) -> None:
+    # The 1000-char cap is enforced inside write_metadata too, not
+    # only by the pydantic validator. Belt-and-braces: a direct call
+    # (e.g. from a test) gets the same ValueError.
+    target = tmp_path / "big.gpx"
+    target.write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+    with pytest.raises(ValueError, match="metadata_desc is"):
+        gpx_loader.write_metadata(target, metadata_desc="x" * 1001)
+
+
+def test_write_metadata_leaves_original_on_failure(tmp_path: Path) -> None:
+    # If the write fails (here: path is a directory), the user's
+    # original file must still be on disk, untouched.
+    target = tmp_path / "willfail.gpx"
+    target.write_bytes((FIXTURES / "with_metadata.gpx").read_bytes())
+    original_bytes = target.read_bytes()
+    bad = tmp_path / "is_a_dir"
+    bad.mkdir()
+    with pytest.raises(Exception):
+        gpx_loader.write_metadata(bad, metadata_name="will fail")
+    # The original file is byte-identical.
+    assert target.read_bytes() == original_bytes

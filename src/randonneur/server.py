@@ -33,7 +33,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from randonneur import gpx_loader, profile, tile_cache, watcher
 from randonneur.config import (
@@ -103,7 +103,9 @@ class TrackSummary(BaseModel):
 
     The point list is intentionally omitted — the UI fetches polyline
     points and the elevation profile via dedicated endpoints, so the
-    folder list stays small even with many tracks.
+    folder list stays small even with many tracks. The metadata
+    fields are inlined so the editor can populate without a second
+    round-trip per track; they're tiny strings.
     """
 
     id: str
@@ -113,6 +115,11 @@ class TrackSummary(BaseModel):
     distance_km: float
     elev_gain_m: float
     bbox: tuple[float, float, float, float] = Field(description="(west, south, east, north)")
+    metadata_name: str | None = None
+    metadata_desc: str | None = None
+    metadata_author: str | None = None
+    track_name: str | None = None
+    track_desc: str | None = None
 
 
 class TrackDetail(BaseModel):
@@ -125,6 +132,11 @@ class TrackDetail(BaseModel):
     elev_gain_m: float
     bbox: tuple[float, float, float, float]
     points: list[Point]
+    metadata_name: str | None = None
+    metadata_desc: str | None = None
+    metadata_author: str | None = None
+    track_name: str | None = None
+    track_desc: str | None = None
 
 
 class TrackProfile(BaseModel):
@@ -177,6 +189,42 @@ class SettingsResponse(BaseModel):
 
     current_source: str
     sources: list[TileSource]
+
+
+# Max length of a single metadata field. Matches the cap enforced by
+# ``gpx_loader.write_metadata``; pinned here so the OpenAPI schema
+# matches the runtime check.
+_METADATA_FIELD_MAX = 1000
+
+
+class MetadataPatch(BaseModel):
+    """Body of PATCH /api/tracks/{id}/metadata.
+
+    Each field is optional: callers send only what the user edited.
+    ``""`` (empty string) means "clear this field"; the server treats
+    that as remove (the file will not contain the element). ``None``
+    (the field is missing from the JSON body) is a no-op for the
+    field. The two are easy to confuse in the UI; the editor's
+    "Clear" button sends ``""``, not a missing field.
+    """
+
+    metadata_name: str | None = None
+    metadata_desc: str | None = None
+    metadata_author: str | None = None
+    track_name: str | None = None
+    track_desc: str | None = None
+
+    @field_validator(
+        "metadata_name", "metadata_desc", "metadata_author",
+        "track_name", "track_desc",
+    )
+    @classmethod
+    def _cap_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > _METADATA_FIELD_MAX:
+            raise ValueError(
+                f"metadata field is {len(v)} chars; max is {_METADATA_FIELD_MAX}"
+            )
+        return v
 
 
 # ─── Internals ────────────────────────────────────────────────────────────────
@@ -288,6 +336,11 @@ def create_app(
                     distance_km=round(t.distance_km, 3),
                     elev_gain_m=round(t.elev_gain_m, 1),
                     bbox=t.bbox,
+                    metadata_name=t.metadata_name,
+                    metadata_desc=t.metadata_desc,
+                    metadata_author=t.metadata_author,
+                    track_name=t.track_name,
+                    track_desc=t.track_desc,
                 )
             )
         _log.info("Folder %s: %d track(s), %d error(s)", folder, len(tracks), len(errors))
@@ -313,6 +366,11 @@ def create_app(
             # rare and still small in JSON. If a future user has 100k+
             # point tracks, downsample here.
             points=[Point(lat=p.lat, lon=p.lon, ele=p.ele) for p in t.points],
+            metadata_name=t.metadata_name,
+            metadata_desc=t.metadata_desc,
+            metadata_author=t.metadata_author,
+            track_name=t.track_name,
+            track_desc=t.track_desc,
         )
 
     @app.get("/api/tracks/{track_id}/profile", response_model=TrackProfile)
@@ -329,6 +387,55 @@ def create_app(
             color=t.color,
             distances_km=distances_km,
             elevations_m=elevations_m,
+        )
+
+    @app.patch("/api/tracks/{track_id}/metadata", response_model=TrackSummary)
+    def api_patch_metadata(track_id: str, patch: MetadataPatch) -> TrackSummary:
+        # Update the metadata fields of one GPX file on disk and
+        # refresh the cache so the change is visible in the UI without
+        # a folder reload. PATCH is the right verb (the editor sends
+        # only the fields the user touched, not the whole document).
+        #
+        # The write is atomic (tmp + os.replace inside
+        # gpx_loader.write_metadata); a crash mid-write leaves the
+        # user's original file untouched. A parse failure on the
+        # existing file (already-cached, but maybe the user just
+        # edited it externally to something malformed) is propagated
+        # as 422 — the UI shows it as a save error.
+        current = _get_cached(app, track_id)
+        try:
+            updated = gpx_loader.write_metadata(
+                current.path,
+                metadata_name=patch.metadata_name,
+                metadata_desc=patch.metadata_desc,
+                metadata_author=patch.metadata_author,
+                track_name=patch.track_name,
+                track_desc=patch.track_desc,
+            )
+        except gpxpy.gpx.GPXException as e:
+            raise HTTPException(
+                status_code=422,
+                detail=f"could not re-parse {current.path.name} after edit: {e}",
+            )
+        except ValueError as e:
+            # Field too long. The pydantic validator usually catches
+            # this first, but a direct call from a test path could
+            # bypass the validator.
+            raise HTTPException(status_code=422, detail=str(e))
+        _state_for(app).track_cache[track_id] = updated
+        return TrackSummary(
+            id=updated.id,
+            name=updated.name,
+            color=updated.color,
+            points=len(updated.points),
+            distance_km=round(updated.distance_km, 3),
+            elev_gain_m=round(updated.elev_gain_m, 1),
+            bbox=updated.bbox,
+            metadata_name=updated.metadata_name,
+            metadata_desc=updated.metadata_desc,
+            metadata_author=updated.metadata_author,
+            track_name=updated.track_name,
+            track_desc=updated.track_desc,
         )
 
     @app.get("/api/settings", response_model=SettingsResponse)
