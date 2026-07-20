@@ -520,6 +520,66 @@ through `configure_logging`, `GET /api/folder?path=tests/fixtures`
 → HTTP 200 (3 tracks, 0 errors), clean SIGTERM ("Shutting down
 (signal 15)" → "Stopped"), no exceptions. `pytest tests/` 90/90.
 
+### #10 — Page-height overflow: `calc(100vh - 49px)` hard-coded a header height that no longer matched
+
+**Symptom:** a phantom vertical scrollbar on a page that had
+nothing to scroll to. The grid spilled ~30 px below the viewport.
+
+**Hypothesis:** "some element has an explicit height larger than
+its container." Try to *falsify*: read `style.css` —
+`.app-grid { height: calc(100vh - 49px) }`. The `49px` is a
+hand-picked offset for the header. The header has never been
+49 px since the settings tab landed: the right-side tab panel,
+the status line, the folder-info span, and the FA gear icon
+all moved in and grew it to ~79 px. So `calc(100vh - 49px)`
+oversizes the grid by the ~30 px the header grew, and the grid
+extends past the viewport. **That's the bug.**
+
+**Root cause:** the layout pinned the header height in CSS
+arithmetic instead of letting the browser compute it. A header
+is a fluid thing — every chrome change (a status line, a new
+control, an icon swap) silently breaks a `calc(100vh - Npx)`
+grid. This is a sibling of bug-hunt #8: a CSS rule that worked
+once and silently stopped working when the surrounding layout
+changed, invisible to `pytest` because layout requires a real
+browser.
+
+**Fix:** turn the body into a flex column so the header takes
+its natural height, and give `.app-grid { flex: 1 1 0;
+min-height: 0 }` so the grid takes exactly the remaining
+viewport regardless of how tall the header actually is.
+`min-height: 0` is the crucial half — without it, a flex item
+won't shrink below its content height and the overflow
+returns. `min-height: 100dvh` on the body (with a `100vh`
+fallback) handles mobile browsers whose URL bar collapses:
+the grid anchors to the visible viewport, not the inflated
+one. The hardcoded `calc(100vh - 49px)` is gone; a regression
+test asserts this so a future revert is caught in CI.
+
+**Why flex over `calc(100vh - HEADER_H)`:** hand-picking the
+header height is exactly what broke. `flex: 1` means the grid
+gets the leftover space, so any future header change is
+silently absorbed instead of silently breaking.
+
+**Lesson (compounding with #8):** never hard-code a
+sibling element's height in CSS arithmetic. The header and
+the grid are siblings under the body; the grid's height
+should be a *function of the body's remaining space*, not a
+guess at the header's height. `flex: 1 + min-height: 0` is
+that function. And — again — a bare `pytest` run that passes
+was not enough to catch this; the new
+`tests/test_headless.py` opens the page in headless Chrome at
+three viewport sizes and asserts
+`document.body.scrollHeight <= window.innerHeight` for each.
+It's marked `integration` (needs a Chrome binary) and skips
+cleanly when absent, so the default `pytest` run still passes
+on CI images without a browser.
+
+**Verified:** `pytest tests/` 110/110. Headless Chrome at
+1200×800, 1920×1080, and 900×600 all report
+`scrollHeight <= innerHeight`. The brittle `calc(100vh - N)`
+pattern is gone from the stylesheet.
+
 ## Decisions
 
 - 2026-07-17 — Created `agent/agent-history.md` as a fresh running log per the
@@ -736,3 +796,181 @@ through `configure_logging`, `GET /api/folder?path=tests/fixtures`
   comments trimmed to timeless "why" notes across `src/` and
   `tests/`. `pytest tests/` 90/90; README re-validated with
   `docutils --strict`; real `randonneur serve` smoke clean.
+- 2026-07-20 — Behaviour-rule addition: **never terminate a
+  process you did not start**. The rule was added to
+  `agent-behaviour.md` §2 (Working mode) after a session in which
+  the agent issued `kill` / `pkill` against a long-running Chrome
+  instance owned by another session, and a server it had itself
+  started but lost track of. The rule applies even in
+  auto / unattended mode, and even when a process appears to be
+  "blocking" something — wait for the human, or work around it.
+  The only processes the agent may signal are ones it spawned in
+  *this* session with a captured PID or a known background-task
+  ID; everything else is the human's. The rule is a hard contract
+  and cannot be relaxed without specific, case-by-case user
+  agreement.
+
+### Backfill — commits 13–19 (2026-07-20, recorded 2026-07-21)
+
+> The following seven commits landed on 2026-07-20 without a
+> matching history entry the same session. Backfilled per the §2
+> rule that a commit without its history entry is incomplete work.
+> Test counts are quoted from each commit message; the suite ends
+> this run at 110/110.
+
+- 2026-07-20 — Commit 13 (`31fd429`): **Remove the Pick… file
+  picker button.** The `webkitdirectory` picker is dead weight
+  once the folder path is the source of truth — the browser
+  security model never returns the absolute path, so the picker
+  is at best a "this folder has 12 GPX files" hint that still
+  leaves the user reaching for the path textbox. Dropped the
+  button, the input, the picker CSS, and the JS handler that
+  surfaced the file count. Pinned the "no folder-picker"
+  contract in the test that lists expected DOM IDs so a
+  re-introduction is caught at CI time. README dropped the
+  matching caveats. The path textbox is now the only way to
+  load a folder (until commit 14 makes it read-only).
+
+- 2026-07-20 — Commit 14 (`b5ad825`): **Take the folder as a
+  `--directory` CLI option.** The browser can't expose an
+  absolute path from a native picker (File System Access API
+  returns opaque handles; `webkitdirectory` is a file-count
+  hint at best), so the user had to paste the path every
+  session. Moved the source of truth to the server start
+  command: `randonneur serve --directory <path>` (alias `-d`,
+  required, must exist and be a directory), mirroring the
+  photogravy CLI shape. The resolved absolute path lives in
+  `_AppState.active_folder` keyed on the FastAPI app id; the
+  `/api/folder` handler reads it from there and the lifespan
+  points the watcher at it before the first HTTP request. The
+  `?path=` query parameter on `/api/folder` is gone (a stale
+  URL gets a sensible empty response). UI: the form/input/Load
+  button replaced with a read-only `<span id="folder-path">`;
+  "no folder configured" shows as a dim placeholder when the
+  server started without `--directory`. Tests gained a
+  `make_client` factory that injects the active folder at
+  `create_app()` time; the old "two folders through one app"
+  tests reframed as two apps; new
+  `test_readme_documents_required_cli_options` pins `--directory`
+  in the README.
+
+- 2026-07-20 — Commit 15 (`94e2500`): **Settings as a right-side
+  tab (not a top-right popover).** The popover sat *behind*
+  Leaflet's tile-pane (~200) / overlay-pane (~400) in some
+  browsers, so a polyline crossing its rectangle visually
+  overlapped it. Replaced with a fixed-width column flush to
+  the right edge, slid in/out with a transform transition;
+  the map/profile panes resize in lockstep via a third grid
+  column on `.app-grid` so the tab has its own room (z-index
+  1000, well above any Leaflet pane). The backdrop is gone —
+  with the tab as a real column the only "outside" clicks are
+  the ⚙ button, the ×, and Escape, all already wired. The
+  `hidden` attribute is gone too; CSS visibility via `.open`
+  is the single source of truth. `settings-backdrop` dropped
+  from the pinned ID list.
+  *Note:* the "third grid column" approach here was itself a
+  latent bug — see commit 19 / bug-hunt #10's sibling: the
+  third column caused `.profile-pane` to auto-flow into the
+  right column. The uncommitted working-tree fix replaces it
+  with `margin-right: 300px`.
+
+- 2026-07-20 — Commit 16 (`8b8716c`): **GPX metadata — read,
+  display, and edit.** GPX 1.1 carries five human-readable
+  fields randonneur was parsing but not surfacing: the
+  top-level `<metadata>` block (`<name>`, `<desc>`,
+  `<author><name>`) and the per-track
+  `<trk><name>`/`<trk><desc>`. Added them to the data model,
+  shipped them on the wire in `/api/folder` and
+  `/api/tracks/{id}`, and exposed a metadata editor in the
+  right-side settings tab. `Track` dataclass gains five
+  optional string fields; `parse()` populates them from
+  gpxpy's `gpx.name` / `gpx.description` / `gpx.author_name`
+  and the first `<trk>`'s name/desc. The file-stem `name`
+  stays as the sidebar/polyline label — the GPX track name is
+  a *display* name, only meaningful once the file is
+  identified. The PATCH endpoint is the one place writes
+  happen: a `MetadataPatch` body where every field is
+  optional, `""` is the editor's "clear" signal, `None`
+  (missing) is a no-op; each field capped at 1000 chars by a
+  pydantic validator. `write_metadata()` does the round-trip
+  via gpxpy's set-or-None convention and writes atomically
+  (tmp + `os.replace`), so a crash mid-save leaves the
+  user's original GPX on disk; the cache is refreshed in the
+  same call. Eight new loader tests (parse extraction,
+  write round-trip, clear / no-op semantics, 1000-char cap,
+  atomic-write-on-failure) + six new server tests (PATCH,
+  empty-string-clears, 404/422, no-op empty body, inlined
+  metadata on the folder list) + two updated shape tests.
+  README gains a Metadata editing section.
+  *Gotcha surfaced later:* this editor re-saves the user's
+  GPX with gpxpy's formatting (single→double quotes,
+  attribute reordering), which is what produced the big
+  `data/*.gpx` diffs that triggered adding `data/` to
+  `.gitignore` (2026-07-21).
+
+- 2026-07-20 — Commit 17 (`37a7576`): **Hiking favicon,
+  `static/media/`, Font Awesome Free icons.** The tab showed
+  a blank document icon and the header ⚙ / close × / Save /
+  Clear buttons were unicode glyphs — placeholder chrome on
+  a viewer whose reason for existing is outdoor maps.
+  Favicon: a hand-drawn mountain-peak-with-trail-marker SVG
+  at `/media/favicon.svg` (inline SVG, no binary asset; paper
+  backplate, sienna peak, dotted white trail; drawn to read
+  at 16 px). Icons: Font Awesome 6 Free from cdnjs, one
+  `<link>` in `index.html` (icons CC BY 4.0 — attribution in
+  the CSS header; font SIL OFL 1.1; no env var / key / Python
+  dep). No JS change — FA icons live in the same `<button>`
+  elements the existing CSS targets and handlers attach to
+  the buttons, not the icons. Two new tests pin the favicon
+  URL/SVG, the FA CDN reference, and the four icon classes
+  (the latter is the regression guard against a future move
+  off FA Free).
+
+- 2026-07-20 — Commit 18 (`9c80fca`): **Earthy accent palette
+  via CSS custom properties.** The bright Bootstrap-blue
+  selection/focus (`#0969da`) and bright-green submit
+  (`#2da44e`) read as "generic web app" on a warm-paper
+  outdoor-map viewer. Pulled the accents into a small set of
+  `:root` custom properties with a sienna identity (deep rust,
+  pale tint, olive success, bark-red error); the rest of the
+  stylesheet references the variables. Why custom properties:
+  a single place to change the palette — a "forest green"
+  variant is six value edits away (the forest values live in a
+  comment block next to the `:root` rule). Why sienna over
+  forest: the favicon (commit 17) is a sienna peak on a
+  paper backplate, so selection = the colour of the map
+  marker, not an unrelated app convention. Neutrals (whites,
+  greys, the warn yellow on parse errors) left alone —
+  semantic, not accent. One new test pins the four custom
+  property values and asserts the four `var(...)` references
+  exist, so a palette change is a deliberate test update, not
+  silent drift.
+
+- 2026-07-20 — Commit 19 (`3a6a2a5`): **Fix: Page height
+  overflow (no more phantom vertical scrollbar).** See
+  bug-hunt #10 above for the full root-cause / fix / lesson.
+  In short: `.app-grid { height: calc(100vh - 49px) }`
+  hard-coded a header offset that no longer matched once the
+  settings tab + status line + folder-info + FA icon grew
+  the header to ~79 px, spilling ~30 px below the viewport.
+  Replaced with `body { display: flex; flex-direction: column;
+  min-height: 100dvh }` + `.app-grid { flex: 1 1 0;
+  min-height: 0 }` so the grid takes the leftover space
+  regardless of header height. New
+  `test_app_grid_flexes_to_remaining_viewport_height` pins the
+  absence of the `calc(100vh - N)` pattern; new
+  `tests/test_headless.py` (marked `integration`, skips
+  without a Chrome binary) asserts
+  `document.body.scrollHeight <= window.innerHeight` at three
+  viewport sizes. `websocket-client` added to the `[dev]`
+  extra as the only new dep. Suite ends this run at 110/110.
+
+- 2026-07-21 — Added `data/` to `.gitignore` and untracked the
+  two real GPX files (`git rm --cached`, files kept on disk).
+  `data/` is the user's own track data, not project content;
+  the metadata editor's gpxpy re-save (commit 16) was
+  producing large `data/*.gpx` diffs that don't belong in
+  commits. Also added a §2 rule + a §7 workflow step to
+  `agent-behaviour.md` making `agent-history.md` maintenance
+  part of the commit, not an afterthought — and backfilled
+  this section for the commits that landed without entries.

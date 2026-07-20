@@ -52,12 +52,34 @@
   in one context doesn't extend to the next. Before deleting/overwriting,
   *look at the target* — if it contradicts how it was described, surface that
   instead of proceeding.
+- **Never terminate a process you did not start.** `kill`, `pkill`, `kill -9`,
+  `killall`, or any other signal/termination mechanism is off-limits for
+  processes the human started (other terminal sessions, their editor, their
+  browser, their Docker containers, anything outside *this* Claude session's
+  own background tasks). The rule applies even in auto / unattended mode,
+  and even when the process is "blocking" something — ask the human first,
+  or wait for them to act. The only processes the agent is allowed to signal
+  are the ones it itself started in this session (a background `Bash` task
+  with a known task ID, or a process the agent explicitly spawned with a
+  captured PID for cleanup). If unsure who started it, don't kill it — ask.
+  This is a hard rule that cannot be broken without specific, case-by-case
+  user agreement; bulk "just clean it up" permission does not extend here.
 - **Never commit or push unless asked.** If on the default branch and a
   commit *is* requested, branch first. End commit messages with the trailer
   below.
 - **Report faithfully.** Tests failed? Show the output. Skipped a step? Say
   so. Done and verified? State it plainly. Don't hedge done work, don't hide
   failures.
+- **Keep `agent-history.md` current — it is part of the work, not a
+  cleanup.** Every commit gets a dated entry in the running log the *same
+  session* the commit lands: the decision/what, the why, and (for a bug fix)
+  a bug-hunt record per §9. A commit that ships without a matching history
+  entry is incomplete work — treat writing the entry as a step of the commit,
+  not an optional afterthought. If you resume a session and find the log
+  behind the commits (history shows work the log doesn't), backfill it before
+  doing new work. The gotchas in the bug-hunt records are the most valuable
+  output of the project; a silent fix that isn't recorded is a fix the next
+  session will re-discover.
 - **Give a recommendation, not a survey.** When weighing options, pick one
   and say why; don't list every path you won't take. Don't re-derive facts
   already established, or re-litigate a decision the human already made.
@@ -175,7 +197,11 @@
   environment.
 5. **Stage + commit** with the message style above (type prefix, imperative
    subject, why-body, `Co-Authored-By` trailer).
-6. **Pause.** Stop and let the human review / let the session reset before
+6. **Record in `agent-history.md`** the same session: a dated entry for the
+   commit (decision/what + why), and — if the commit fixed a bug — a
+   bug-hunt record per §9. Shipping the commit without its history entry
+   is incomplete work (see §2).
+7. **Pause.** Stop and let the human review / let the session reset before
    the next commit. Don't chain commits unbidden.
 
 ---
