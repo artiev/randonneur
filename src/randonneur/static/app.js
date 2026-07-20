@@ -580,19 +580,21 @@
 
   function formatProfileStats(data) {
     const total = data.distances_km[data.distances_km.length - 1] || 0;
-    // Sum positive and negative elevation deltas separately (skip the
-    // None→0 substitutes profile.compute_profile inserts): gain is total
-    // ascent, loss is total descent as a positive magnitude.
-    let gain = 0;
-    let loss = 0;
-    for (let i = 1; i < data.elevations_m.length; i++) {
-      const dy = data.elevations_m[i] - data.elevations_m[i - 1];
-      if (dy > 0) gain += dy;
-      else if (dy < 0) loss += -dy;
-    }
-    const minE = Math.min(...data.elevations_m);
-    const maxE = Math.max(...data.elevations_m);
-    return `${total.toFixed(2)} km · ↑ ${Math.round(gain)} m · ↓ ${Math.round(loss)} m · ${Math.round(minE)}–${Math.round(maxE)} m`;
+    // Gain/loss/min/max come straight from the server — they're
+    // gap-aware (a GPS dropout's missing <ele> is skipped, not treated
+    // as 0). The elevations_m array still carries 0.0 for gaps so it
+    // stays index-aligned with distances_km for Plotly and the hover-
+    // sync, which means recomputing these client-side would count a
+    // dropout as a ~2000 m plunge and a bogus 0 m minimum. Read the
+    // server's numbers instead so the profile stat line matches the
+    // sidebar exactly (one source of truth).
+    const gain = Math.round(data.elev_gain_m);
+    const loss = Math.round(data.elev_loss_m);
+    const range =
+      data.elev_min_m == null || data.elev_max_m == null
+        ? "—"
+        : `${Math.round(data.elev_min_m)}–${Math.round(data.elev_max_m)} m`;
+    return `${total.toFixed(2)} km · ↑ ${gain} m · ↓ ${loss} m · ${range}`;
   }
 
   function hexToRgba(hex, alpha) {

@@ -642,6 +642,80 @@ check run via a temporary integration test, since removed;
 the fix is guarded going forward by the existing layout
 tests.)
 
+### #12 — Profile stat line disagreed with the sidebar by ~2000 m whenever a track had an elevation gap
+
+**Symptom:** for the `elevation_gaps` fixture (elevations
+2000, None, 2050, 2030), the sidebar showed `↑50 m · ↓20 m`
+(correct) while the profile pane showed `↑ 2050 m · ↓ 2020 m`
+with a bogus `0–2050 m` range — two displays of the same track
+disagreeing by ~2000 m of climbing.
+
+**Hypothesis:** "the client-side gain/loss recompute has a bug."
+Try to *falsify*: the JS `formatProfileStats` loop itself is
+fine — it sums positive/negative deltas the same way the
+backend does. The bug isn't in the loop; it's in what the loop
+iterates over. The profile endpoint (`profile.compute_profile`)
+substitutes `None → 0.0` to keep the elevation array
+index-aligned with distances for Plotly and the hover-sync, so
+`elevations_m` arrives as `[2000, 0, 2050, 2030]`. The JS has
+no way to tell a real 0 m reading from a GPS dropout — the
+`None` information is destroyed server-side before the client
+sees it. The recompute then dutifully sums `2000→0` (-2000)
+and `0→2050` (+2050): a phantom 2000 m plunge and 2050 m climb
+that never happened, plus a 0 m minimum. The existing
+`formatProfileStats` comment even *claimed* it "skips the
+None→0 substitutes" — but it can't; they're already substituted.
+
+**Root cause:** duplicated computation with asymmetric gap
+handling. The backend `_elevation_gain_loss` skips `None`
+gaps (correct — a dropout isn't a 0 m sample); the client
+recomputes the same stat from an array where the gaps have
+already been replaced by 0.0 (wrong). One source of truth, two
+different views of it, and the wire format silently rewrote the
+data between them. The same root cause corrupted the client-side
+min/max (`Math.min(...elevations_m)` returned 0 for any gapped
+track).
+
+**Fix:** one source of truth. The profile endpoint now ships
+the backend's gap-aware `elev_gain_m` / `elev_loss_m` (computed
+once at parse time) plus a new gap-aware `elev_min_m` /
+`elev_max_m` from a new `gpx_loader._elevation_min_max` helper
+(skips `None`, returns `(None, None)` when no point has an
+elevation). `formatProfileStats` reads those four fields
+directly and stops recomputing from `elevations_m` — the
+array still carries 0.0 for gaps (Plotly + the hover-sync need
+the index alignment), but it's no longer used for stats. The
+profile stat line now matches the sidebar by construction (same
+numbers, same source), and the range is the real 2000–2050, not
+0–2050. The duplicated client-side math is retired, so no
+`test_sync_math.py` parity twin is needed — the parity gap is
+removed, not twinned.
+
+**Lesson (compounding with #5):** when the same quantity is
+computed in two places, the wire format between them is a
+silent rewrite boundary. Here the rewrite was `None → 0.0` —
+harmless for the Plotly trace (which just draws a dip), fatal
+for a downstream stat that assumed it was seeing real
+elevations. The fix isn't to make the downstream stat
+gap-aware too (it can't be, once the `None` is gone); the fix
+is to not recompute — ship the authoritative number and display
+it. And a comment that asserts behaviour the code can't
+perform ("skips the None→0 substitutes") is worse than no
+comment: it talks the next reader out of looking. The regression
+guard is a value-level pin on the profile response
+(`elev_gain_m == 50`, `elev_min_m == 2000` — not the 0/2050 the
+old recompute produced), plus edge-case unit tests on the
+helper directly (empty, single, all-None, monotonic up/down,
+flat, leading/trailing/consecutive gaps, mixed).
+
+**Verified:** `pytest tests/` 123/123 (13 new). Headless Chrome
+on the gapped fixture: sidebar `0.4 km · ↑50 m · ↓20 m`,
+profile `0.40 km · ↑ 50 m · ↓ 20 m · 2000–2050 m` — gain/loss
+agree, range is real. (One-off check via a temporary
+integration test, since removed; the fix is guarded going
+forward by the profile-endpoint value pins and the helper unit
+tests.)
+
 ## Decisions
 
 - 2026-07-17 — Created `agent/agent-history.md` as a fresh running log per the
@@ -1141,3 +1215,39 @@ tests.)
   `docutils --strict`; headless Chrome confirmed both the sidebar
   and the profile stats lines show separate ↑ and ↓ metre values
   (and no `km` misused for elevation).
+- 2026-07-21 — Commit 24 (`Fix`): **Make the profile stat line
+  match the sidebar for tracks with elevation gaps.** The gain/loss
+  separation (commit 23) exposed a latent parity bug: the sidebar
+  read gap-aware `elev_gain_m` / `elev_loss_m` from the backend
+  (None dropouts skipped), but the profile `formatProfileStats`
+  recomputed gain/loss *and* min/max client-side from
+  `elevations_m` — an array where `profile.compute_profile` had
+  already substituted `None → 0.0` for index alignment with
+  Plotly and the hover-sync. So any track with an elevation
+  dropout showed ~2000 m of phantom climbing on the profile pane
+  and a bogus 0 m minimum, while the sidebar showed the real
+  (small) numbers. Root cause: duplicated computation across a
+  wire format that silently rewrites `None` to `0.0`; the client
+  cannot be gap-aware once the `None` is gone. Fix is one source
+  of truth — the profile endpoint now ships the backend's
+  `elev_gain_m` / `elev_loss_m` plus a new gap-aware
+  `elev_min_m` / `elev_max_m` (from a new
+  `gpx_loader._elevation_min_max` helper, skips `None`, returns
+  `(None, None)` when no point has an elevation), and
+  `formatProfileStats` displays those directly instead of
+  recomputing. The `elevations_m` array is unchanged (Plotly +
+  the hover-sync still need the 0.0 alignment); it's just no
+  longer the source of the stats. The duplicated client-side
+  math is retired, so no `test_sync_math.py` parity twin is
+  needed. See bug-hunt #12 for the full hunt. Tests: 13 new —
+  edge cases on `_elevation_gain_loss` / `_elevation_min_max`
+  (empty, single point, all-None, monotonic ascent/descent,
+  flat, leading/trailing/consecutive gaps, mixed up-and-down,
+  min/max over gaps and the all-None `None` pair), plus a
+  value-level pin on the profile endpoint for the gapped
+  fixture (`elev_gain_m == 50`, `elev_loss_m == 20`,
+  `elev_min_m == 2000`, `elev_max_m == 2050` — not the
+  2050/2020/0 the old recompute produced) and the updated
+  profile-response key set. `pytest tests/` 123/123; headless
+  Chrome confirmed the sidebar and profile stat lines now agree
+  (gain 50, loss 20, real 2000–2050 m range).

@@ -154,6 +154,22 @@ class TrackProfile(BaseModel):
         description="Elevation in metres aligned by index with distances_km. "
         "Missing samples are 0.0 (see profile.compute_profile for why)."
     )
+    # Gap-aware stats over the *real* elevations (None skipped). The
+    # arrays above substitute 0.0 for gaps to stay index-aligned with
+    # Plotly and the hover-sync, so recomputing these client-side from
+    # elevations_m would count a dropout as a ~2000 m plunge. Ship the
+    # server's numbers and let the UI display them directly — one source
+    # of truth, matching the sidebar stat line exactly.
+    elev_gain_m: float = Field(description="Total ascent in metres (gaps skipped).")
+    elev_loss_m: float = Field(
+        description="Total descent in metres as a positive magnitude (gaps skipped)."
+    )
+    elev_min_m: float | None = Field(
+        description="Lowest real elevation in metres, or null if no point has one."
+    )
+    elev_max_m: float | None = Field(
+        description="Highest real elevation in metres, or null if no point has one."
+    )
 
 
 class FolderResponse(BaseModel):
@@ -381,16 +397,25 @@ def create_app(
     def api_track_profile(track_id: str) -> TrackProfile:
         t = _get_cached(app, track_id)
         distances_km, elevations_m = profile.compute_profile(t.points)
+        elev_min, elev_max = gpx_loader._elevation_min_max(t.points)
         # TrackProfile is the Plotly-shaped payload. The arrays stay
         # raw (no downsampling) — Plotly handles 1k-10k points in
         # scatter mode fine; switch to scattergl in a future v2 if
-        # anyone hits a real perf issue.
+        # anyone hits a real perf issue. The gap-aware stats are the
+        # same numbers the sidebar shows (computed once at parse time
+        # for gain/loss, here for min/max) so the two stat lines can't
+        # drift — see the TrackProfile field comments for why the UI
+        # must not recompute these from elevations_m.
         return TrackProfile(
             id=t.id,
             name=t.name,
             color=t.color,
             distances_km=distances_km,
             elevations_m=elevations_m,
+            elev_gain_m=t.elev_gain_m,
+            elev_loss_m=t.elev_loss_m,
+            elev_min_m=elev_min,
+            elev_max_m=elev_max,
         )
 
     @app.patch("/api/tracks/{track_id}/metadata", response_model=TrackSummary)

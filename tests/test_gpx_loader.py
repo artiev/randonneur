@@ -78,6 +78,102 @@ def test_parse_elev_gain_and_loss_skips_gap() -> None:
     assert track.elev_loss_m == pytest.approx(20.0)
 
 
+# ─── _elevation_gain_loss / _elevation_min_max edge cases ─────────────────────
+#
+# The fixture above covers one path (a single interior gap). The helper
+# is the single source of the sidebar's gain/loss and the profile pane's
+# min/max, so its edge cases matter: empty input, a lone point, all-None
+# samples, monotonic runs, flats, and gaps at the ends. We call the
+# helpers directly with constructed Points so the tests don't depend on
+# hand-building a GPX fixture per case.
+
+
+def _pts(*eles: float | None) -> list[gpx_loader.Point]:
+    """Build a point list from an elevation sequence (lat/lon arbitrary)."""
+    return [gpx_loader.Point(lat=0.0, lon=float(i), ele=e) for i, e in enumerate(eles)]
+
+
+def test_gain_loss_empty_points() -> None:
+    assert gpx_loader._elevation_gain_loss([]) == (0.0, 0.0)
+
+
+def test_gain_loss_single_point() -> None:
+    # No deltas to sum → both zero.
+    assert gpx_loader._elevation_gain_loss(_pts(1500.0)) == (0.0, 0.0)
+
+
+def test_gain_loss_all_none() -> None:
+    # No real samples → nothing to climb or descend.
+    assert gpx_loader._elevation_gain_loss(_pts(None, None, None)) == (0.0, 0.0)
+
+
+def test_gain_loss_monotonic_ascent_only() -> None:
+    gain, loss = gpx_loader._elevation_gain_loss(_pts(100.0, 200.0, 300.0))
+    assert gain == pytest.approx(200.0)
+    assert loss == pytest.approx(0.0)
+
+
+def test_gain_loss_monotonic_descent_only() -> None:
+    gain, loss = gpx_loader._elevation_gain_loss(_pts(300.0, 200.0, 100.0))
+    assert gain == pytest.approx(0.0)
+    assert loss == pytest.approx(200.0)
+
+
+def test_gain_loss_flat_is_zero() -> None:
+    assert gpx_loader._elevation_gain_loss(_pts(500.0, 500.0, 500.0)) == (0.0, 0.0)
+
+
+def test_gain_loss_mixed_up_and_down_independently() -> None:
+    # 100 → 250 (+150) → 200 (-50) → 230 (+30) → 180 (-50).
+    # gain = 150 + 30 = 180; loss = 50 + 50 = 100.
+    gain, loss = gpx_loader._elevation_gain_loss(_pts(100.0, 250.0, 200.0, 230.0, 180.0))
+    assert gain == pytest.approx(180.0)
+    assert loss == pytest.approx(100.0)
+
+
+def test_gain_loss_leading_gap_ignores_it() -> None:
+    # None, None, 100, 200 → the first real sample seeds prev; only
+    # the 100→200 delta counts. The leading Nones contribute nothing.
+    gain, loss = gpx_loader._elevation_gain_loss(_pts(None, None, 100.0, 200.0))
+    assert gain == pytest.approx(100.0)
+    assert loss == pytest.approx(0.0)
+
+
+def test_gain_loss_trailing_gap_ignores_it() -> None:
+    # 100, 200, None, None → the 100→200 delta counts; trailing Nones
+    # don't manufacture a plunge to 0.
+    gain, loss = gpx_loader._elevation_gain_loss(_pts(100.0, 200.0, None, None))
+    assert gain == pytest.approx(100.0)
+    assert loss == pytest.approx(0.0)
+
+
+def test_gain_loss_consecutive_gaps_bridge_to_next_real() -> None:
+    # 100, None, None, 130 → the delta bridges across the gap to the
+    # next real sample: +30 of gain, not a -100 loss then +130 gain.
+    # This is the gap-skipping rule that keeps the sidebar and the
+    # profile stat line in agreement (see the server profile endpoint).
+    gain, loss = gpx_loader._elevation_gain_loss(_pts(100.0, None, None, 130.0))
+    assert gain == pytest.approx(30.0)
+    assert loss == pytest.approx(0.0)
+
+
+def test_min_max_skips_none() -> None:
+    lo, hi = gpx_loader._elevation_min_max(_pts(2000.0, None, 2050.0, 2030.0))
+    assert lo == pytest.approx(2000.0)
+    assert hi == pytest.approx(2050.0)
+
+
+def test_min_max_empty_or_all_none_is_none_pair() -> None:
+    assert gpx_loader._elevation_min_max([]) == (None, None)
+    assert gpx_loader._elevation_min_max(_pts(None, None)) == (None, None)
+
+
+def test_min_max_single_real_sample() -> None:
+    lo, hi = gpx_loader._elevation_min_max(_pts(None, 1234.0, None))
+    assert lo == pytest.approx(1234.0)
+    assert hi == pytest.approx(1234.0)
+
+
 def test_parse_multi_segment_flattens_in_order() -> None:
     track = gpx_loader.parse(FIXTURES / "multi_segment.gpx")
 

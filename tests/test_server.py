@@ -402,7 +402,10 @@ def test_profile_returns_aligned_arrays(make_client, tmp_path: Path) -> None:
     track_id = client.get("/api/folder").json()["tracks"][0]["id"]
 
     body = client.get(f"/api/tracks/{track_id}/profile").json()
-    assert set(body.keys()) == {"id", "name", "color", "distances_km", "elevations_m"}
+    assert set(body.keys()) == {
+        "id", "name", "color", "distances_km", "elevations_m",
+        "elev_gain_m", "elev_loss_m", "elev_min_m", "elev_max_m",
+    }
     # multi_segment has 5 points → arrays must be 5 long and aligned.
     assert len(body["distances_km"]) == 5
     assert len(body["elevations_m"]) == 5
@@ -430,6 +433,15 @@ def test_profile_substitutes_zero_for_missing_elevation(
     # not NaN, and the array length must match the point count.
     assert len(body["elevations_m"]) == 4
     assert body["elevations_m"][1] == 0.0
+    # The gap-aware stats skip the None — they must NOT reflect the
+    # 0.0 substitute. Elevations are 2000, None, 2050, 2030 → gain 50,
+    # loss 20, min 2000, max 2050. A client-side recompute over
+    # elevations_m would give gain 2050 / loss 2020 / min 0 — this
+    # pin guards against that regression.
+    assert body["elev_gain_m"] == pytest.approx(50.0)
+    assert body["elev_loss_m"] == pytest.approx(20.0)
+    assert body["elev_min_m"] == pytest.approx(2000.0)
+    assert body["elev_max_m"] == pytest.approx(2050.0)
 
 
 def test_profile_404_for_unknown_id(client: TestClient) -> None:

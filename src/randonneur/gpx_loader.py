@@ -156,6 +156,22 @@ def _elevation_gain_loss(points: list[Point]) -> tuple[float, float]:
     return gain, loss
 
 
+def _elevation_min_max(points: list[Point]) -> tuple[float | None, float | None]:
+    """Lowest and highest real elevation in metres.
+
+    Returns ``(min, max)`` over the non-``None`` samples, or ``(None, None)``
+    when no point has an elevation. Gaps are skipped for the same reason
+    as in :func:`_elevation_gain_loss`: a GPS dropout is a missing sample,
+    not a 0 m reading, so it must never show up as a bogus ``0`` minimum
+    on the profile stat line. The caller renders an em dash for the range
+    when both are ``None`` rather than a misleading ``0–0 m``.
+    """
+    real = [p.ele for p in points if p.ele is not None]
+    if not real:
+        return (None, None)
+    return (min(real), max(real))
+
+
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
