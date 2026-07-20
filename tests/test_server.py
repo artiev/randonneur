@@ -142,7 +142,7 @@ def test_index_contains_required_dom_ids() -> None:
     client = TestClient(create_app(static_dir=static_files_dir()))
 
     body = client.get("/").text
-    for id_ in ("folder-form", "folder-input", "folder-picker",
+    for id_ in ("folder-form", "folder-input",
                 "track-list", "errors", "errors-list", "map",
                 "profile", "profile-title", "profile-stats",
                 # Settings panel. Pinning these IDs means a rename in

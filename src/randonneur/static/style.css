@@ -70,8 +70,7 @@ html, body {
   background: #ffffff;
 }
 
-button,
-.picker-button {
+button {
   padding: 6px 12px;
   font-size: 13px;
   font-weight: 500;
@@ -82,8 +81,7 @@ button,
   cursor: pointer;
 }
 
-button:hover,
-.picker-button:hover { background: #eaeef2; }
+button:hover { background: #eaeef2; }
 
 button[type="submit"] {
   background: #2da44e;

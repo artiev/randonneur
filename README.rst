@@ -19,9 +19,8 @@ GPXSee_ is the lightweight reference viewer. gpx.studio_ is the
 UX reference for click-to-focus. randonneur borrows the paper-map
 aesthetic from the first and the "open the folder, see every track
 at once" flow from the second, and runs entirely as a local
-FastAPI app + a single static page in the browser. No native
-dialog (browser file pickers don't return absolute paths, so the
-folder path is a text input), no build step, no JS framework.
+FastAPI app + a single static page in the browser. No build step,
+no JS framework.
 
 .. _GPXSee: https://www.gpxsee.org/
 .. _gpx.studio: https://gpx.studio/
@@ -85,14 +84,10 @@ Open the UI in a browser (either via the auto-open, or by visiting
 
 ::
 
-    randonneur  [ /Users/you/Tracks           ] [Load] [Pick…]   ⚙
+    randonneur  [ /Users/you/Tracks           ] [Load]   ⚙
 
 The textbox is the source of truth: type the absolute path to a
 folder containing ``.gpx`` files and press **Load** (or Enter).
-The browser's file picker (``Pick…``) is a convenience that tells
-you how many GPX files are in the picked folder — but it does
-**not** give the absolute path, because the browser security model
-won't let it. You still have to paste the path yourself.
 
 The map fills the upper-right; the elevation profile fills the
 lower-right; the track list is on the left. The status line under
@@ -123,7 +118,7 @@ FastAPI + Uvicorn.
 ::
 
     ┌────────────────────────────────────────────────────────────┐
-    │ randonneur   [ /Users/you/Tracks        ] [Load] [Pick…] ⚙ │
+    │ randonneur   [ /Users/you/Tracks        ] [Load]   ⚙       │
     ├──────────────┬─────────────────────────────────────────────┤
     │ ☑ tour1.gpx  │                                             │
     │ ☐ tour2.gpx  │              MAP (Leaflet)                  │
@@ -243,10 +238,6 @@ Limitations and known sharp edges
   a hike that the raw elevation signal is the honest one; a
   smoother can mislead about how steep a section actually was.
   Easy to add a moving average later if you want one.
-- **Browser file pickers don't return absolute paths.** This is a
-  browser security model thing, not a randonneur limitation. The
-  path textbox is the source of truth; the picker is a
-  file-count hint.
 - **In-memory track cache.** ``/api/tracks/{id}`` is populated as
   the folder is listed and shared with ``/api/tracks/{id}/profile``
   so a click doesn't re-parse. The cache is reset on every folder

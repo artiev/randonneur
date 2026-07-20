@@ -6,9 +6,7 @@
  * flow, with a two-way hover crosshair between them.
  *
  * Folder selection: a path textbox is the source of truth (browser
- * file pickers don't return absolute paths). The webkitdirectory picker
- * is a convenience that previews how many .gpx files are in the picked
- * folder — the user still has to paste the path.
+ * file pickers don't return absolute paths).
  */
 
 (() => {
@@ -47,7 +45,6 @@
 
   const folderForm = document.getElementById("folder-form");
   const folderInput = document.getElementById("folder-input");
-  const folderPicker = document.getElementById("folder-picker");
   const folderStatus = document.getElementById("folder-status");
   const trackList = document.getElementById("track-list");
   const errorsSection = document.getElementById("errors");
@@ -811,28 +808,13 @@
     }
   }
 
-  // ─── Form / picker wiring ────────────────────────────────────────────────
+  // ─── Form wiring ─────────────────────────────────────────────────────────
 
   folderForm.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const path = folderInput.value.trim();
     if (!path) return;
     loadFolder(path);
-  });
-
-  folderPicker.addEventListener("change", () => {
-    // The webkitdirectory picker tells us how many files are in the
-    // folder, but it does NOT give us the absolute path. We hint to
-    // the user and let them paste the path.
-    const files = Array.from(folderPicker.files || []);
-    const gpxCount = files.filter((f) => f.name.toLowerCase().endsWith(".gpx")).length;
-    if (files.length === 0) return;
-    const firstName = files[0].webkitRelativePath.split("/")[0];
-    setStatus(
-      `Picked "${firstName}" (${gpxCount} GPX file(s)). ` +
-        `Paste the absolute path above and press Load.`
-    );
-    folderInput.focus();
   });
 
   // ─── Utils ───────────────────────────────────────────────────────────────
