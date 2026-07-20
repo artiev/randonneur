@@ -1100,3 +1100,17 @@ tests.)
   Edit is open, no reopen on selection while closed, active-button
   toggle-close, Escape close, × close, the 300px margin + profile
   bottom-row invariant, and no viewport overflow.
+- 2026-07-21 — Commit 22 (`Chore`): **Use the favicon SVG as a
+  logo left of the title; capitalize the title RANDONNEUR.** The
+  header's first grid cell is now a `.brand` inline-flex holding
+  the existing `/media/favicon.svg` (rendered at 20×20,
+  `alt=""` — decorative, since the `<h1>` carries the text) beside
+  the `<h1>RANDONNEUR</h1>`. The h1 gains a 0.08em letter-spacing
+  so the all-caps wordmark reads as a logo, not a shouty label.
+  No test pinned the h1 text (only `<title>randonneur</title>` in
+  `<head>`, unchanged), so the capitalize is text content, not a
+  CSS transform — the DOM text is accurate. `pytest tests/`
+  110/110; headless Chrome confirmed the SVG loads
+  (`naturalWidth > 0`), renders at 20px, the title is "RANDONNEUR",
+  the logo + title share one brand box, and the header change
+  introduced no viewport overflow.

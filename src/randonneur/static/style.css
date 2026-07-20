@@ -108,6 +108,20 @@ body {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+  /* All-caps wordmark — a touch of letter spacing so the capitalized
+     title reads as a logo, not a shouty label. */
+  letter-spacing: 0.08em;
+}
+
+.brand {
+  /* The logo + title sit together in the header's first grid column. */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-logo {
+  display: block;
 }
 
 .folder-info {
