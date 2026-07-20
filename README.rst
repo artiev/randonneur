@@ -45,14 +45,17 @@ also run the test suite. If you only want to use the app, plain
 Run
 ---
 
-Start the server and open the UI in your default browser::
+Start the server and open the UI in your default browser. The folder
+containing your ``.gpx`` files is required at startup — the browser
+cannot expose an absolute path from a native picker, so the server
+picks the folder and the UI shows it read-only::
 
-    .venv/bin/randonneur
+    .venv/bin/randonneur serve --directory /Users/you/Tracks
 
 The server binds to ``http://127.0.0.1:8765`` by default. To pick
 a different port (e.g. when 8765 is already in use)::
 
-    .venv/bin/randonneur serve --port 8800
+    .venv/bin/randonneur serve --directory /Users/you/Tracks --port 8800
 
 Other useful flags:
 
@@ -64,6 +67,15 @@ Other useful flags:
   shared network** unless you know who's on it.
 - ``-v`` / ``--verbose`` — DEBUG-level logging for the watcher,
   tile fetcher, etc.
+
+To change the folder, restart the server with a new ``--directory``
+path. The folder is fixed for the server's lifetime — the watcher,
+the track cache, and the UI all bind to the same path for the
+duration of the run.
+
+The bare ``randonneur`` (no args) and ``randonneur serve`` (no
+``--directory``) both error with "Missing option '--directory'" —
+restart with the flag to point the server at your tracks.
 
 The server shuts down on Ctrl-C / SIGTERM. The watcher task is
 stopped cleanly in the lifespan handler, so you won't be left
@@ -80,18 +92,17 @@ Select your first folder
 ------------------------
 
 Open the UI in a browser (either via the auto-open, or by visiting
-``http://127.0.0.1:8765`` yourself). You'll see the header:
+``http://127.0.0.1:8765`` yourself). The header shows the loaded
+folder as read-only information; the track list is on the left; the
+map fills the upper-right; the elevation profile fills the lower-right.
 
 ::
 
-    randonneur  [ /Users/you/Tracks           ] [Load]   ⚙
+    randonneur  Folder  /Users/you/Tracks                 ⚙
 
-The textbox is the source of truth: type the absolute path to a
-folder containing ``.gpx`` files and press **Load** (or Enter).
-
-The map fills the upper-right; the elevation profile fills the
-lower-right; the track list is on the left. The status line under
-the header shows the loaded folder and track count.
+The status line under the header shows the track count and any
+per-file parse errors. To switch folders, restart the server with
+a new ``--directory``.
 
 Once a folder is loaded:
 
@@ -118,7 +129,7 @@ FastAPI + Uvicorn.
 ::
 
     ┌────────────────────────────────────────────────────────────┐
-    │ randonneur   [ /Users/you/Tracks        ] [Load]   ⚙       │
+    │ randonneur   Folder  /Users/you/Tracks                 ⚙    │
     ├──────────────┬─────────────────────────────────────────────┤
     │ ☑ tour1.gpx  │                                             │
     │ ☐ tour2.gpx  │              MAP (Leaflet)                  │

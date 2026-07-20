@@ -5,8 +5,10 @@
  * Leaflet map and the Plotly elevation profile into a single selection
  * flow, with a two-way hover crosshair between them.
  *
- * Folder selection: a path textbox is the source of truth (browser
- * file pickers don't return absolute paths).
+ * Folder selection: the folder is fixed for the server's lifetime
+ * (``randonneur serve --directory <path>``). The UI just shows the
+ * active path read-only in the header and re-fetches /api/folder when
+ * the watcher fires a change.
  */
 
 (() => {
@@ -18,7 +20,7 @@
   let tracks = [];
   /** @type {string|null} id of the currently focused track */
   let selectedTrackId = null;
-  /** @type {string|null} currently loaded folder path */
+  /** @type {string|null} currently loaded folder path (from /api/folder) */
   let currentFolder = null;
   /** @type {Map<string, object>} id → fetched track detail (with polyline) */
   const trackDetails = new Map();
@@ -43,8 +45,7 @@
 
   // ─── DOM refs (resolved once on load) ────────────────────────────────────
 
-  const folderForm = document.getElementById("folder-form");
-  const folderInput = document.getElementById("folder-input");
+  const folderPath = document.getElementById("folder-path");
   const folderStatus = document.getElementById("folder-status");
   const trackList = document.getElementById("track-list");
   const errorsSection = document.getElementById("errors");
@@ -703,10 +704,10 @@
         // Server debounces; one message per batch. Re-list the folder
         // and let the normal render path take over. We don't act on
         // the specific files — the server is the single source of
-        // truth for what's in the folder. Guarded by currentFolder
-        // so an early "changed" message (before the user has picked
-        // a folder) is a no-op rather than a 422.
-        if (currentFolder) refreshFolder();
+        // truth for what's in the folder. An early "changed" message
+        // (before the initial /api/folder has completed) just shows
+        // the new state when it lands.
+        refreshFolder();
       }
     });
     ws.addEventListener("close", () => {
@@ -728,47 +729,13 @@
   });
 
   async function refreshFolder() {
-    // Hot-reload: re-fetch /api/folder without changing the input or
-    // the status. The render path is the same as the initial load,
-    // minus the "Loading…" setStatus call.
-    if (!currentFolder) return;
+    // Re-fetch /api/folder (the active folder is set at server start;
+    // we don't pass a path). Used both for the initial load and for
+    // hot-reload messages from the watcher. Renders the folder path
+    // in the header on the first successful response (the "Folder"
+    // label is empty until the server confirms a folder is loaded).
     try {
-      const resp = await fetch(`/api/folder?path=${encodeURIComponent(currentFolder)}`);
-      if (!resp.ok) {
-        setStatus(`Reload error: HTTP ${resp.status}`, true);
-        return;
-      }
-      const body = await resp.json();
-      // Same invariants as the initial load: drop the selection if
-      // the previously-selected track is gone, re-render list and
-      // errors, redraw the map.
-      if (!body.tracks.some((t) => t.id === selectedTrackId)) {
-        selectedTrackId = null;
-      }
-      tracks = body.tracks;
-      renderTrackList();
-      renderErrors(body.errors);
-      drawAllTracks();
-      if (selectedTrackId) {
-        fetchProfile(selectedTrackId);
-      } else {
-        clearProfile();
-      }
-      setStatus(
-        `${body.path}: ${body.tracks.length} track(s)` +
-        (body.errors.length ? `, ${body.errors.length} error(s)` : "")
-      );
-    } catch (err) {
-      setStatus(`Reload error: ${err.message}`, true);
-    }
-  }
-
-  async function loadFolder(path) {
-    setStatus(`Loading ${path}…`);
-    try {
-      const resp = await fetch(
-        `/api/folder?path=${encodeURIComponent(path)}`
-      );
+      const resp = await fetch(`/api/folder`);
       if (resp.status === 404) {
         const detail = (await resp.json()).detail || "folder not found";
         setStatus(detail, true);
@@ -779,43 +746,50 @@
         return;
       }
       const body = await resp.json();
+      // Update the read-only folder path display. When the server
+      // was started without --directory, body.path is null and we
+      // show a dim placeholder.
+      if (body.path) {
+        folderPath.textContent = body.path;
+        folderPath.classList.remove("empty");
+        folderPath.title = body.path;
+      } else {
+        folderPath.textContent = "no folder configured";
+        folderPath.classList.add("empty");
+        folderPath.removeAttribute("title");
+      }
+      // If the active folder changed (a future feature), drop the
+      // selection — a track id from the old folder won't exist in
+      // the new one.
+      if (body.path !== currentFolder && selectedTrackId) {
+        selectedTrackId = null;
+      }
       currentFolder = body.path;
-      tracks = body.tracks;
-      // Drop the selection if the previously-selected track isn't in the
-      // new folder — re-selecting by id would be wrong (different file).
+      tracks = body.tracks || [];
+      // Drop the selection if the previously-selected track is gone.
       if (!tracks.some((t) => t.id === selectedTrackId)) {
         selectedTrackId = null;
       }
       renderTrackList();
       renderErrors(body.errors);
       drawAllTracks();
-      // The selected track may have been dropped above; redraw or clear
-      // the profile accordingly.
       if (selectedTrackId) {
         fetchProfile(selectedTrackId);
       } else {
         clearProfile();
       }
-      setStatus(
-        body.tracks.length === 0
-          ? `${body.path}: no GPX files`
-          : `${body.path}: ${body.tracks.length} track(s)` +
-            (body.errors.length ? `, ${body.errors.length} error(s)` : "")
-      );
+      if (body.path) {
+        setStatus(
+          `${body.path}: ${body.tracks.length} track(s)` +
+          (body.errors.length ? `, ${body.errors.length} error(s)` : "")
+        );
+      } else {
+        setStatus("No folder configured — start the server with --directory <path>.");
+      }
     } catch (err) {
-      // Network failure (server down, etc.) — surface it.
       setStatus(`Network error: ${err.message}`, true);
     }
   }
-
-  // ─── Form wiring ─────────────────────────────────────────────────────────
-
-  folderForm.addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    const path = folderInput.value.trim();
-    if (!path) return;
-    loadFolder(path);
-  });
 
   // ─── Utils ───────────────────────────────────────────────────────────────
 
@@ -839,12 +813,11 @@
   loadSettings();
   setScaleBar(showScaleBar);
 
-  // If the URL has ?path=... (e.g. from a deep link), pre-fill and load.
-  const initial = new URLSearchParams(location.search).get("path");
-  if (initial) {
-    folderInput.value = initial;
-    loadFolder(initial);
-  }
+  // Load the active folder (configured at server start). The server
+  // returns the path, the track list, and any per-file parse errors
+  // in one round-trip; refreshFolder renders the path in the header
+  // and re-uses the same render path on every subsequent refresh.
+  refreshFolder();
 
   // Leaflet needs an invalidateSize() after the layout settles, otherwise
   // the map renders half-width if the pane was hidden during init. The

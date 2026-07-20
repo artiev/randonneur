@@ -2,7 +2,9 @@
 
 Endpoints:
 
-- ``GET /api/folder?path=<absolute>`` — list parsed tracks for a folder.
+- ``GET /api/folder`` — list parsed tracks for the configured folder.
+  The folder is fixed for the server's lifetime (set via the
+  ``--directory`` CLI flag at startup) and lives in the per-app state.
   Per-file parse errors are returned in the response (``errors`` field)
   so the UI can show "could not parse foo.gpx" rather than dropping
   the whole folder.
@@ -25,11 +27,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
 
 import gpxpy.gpx
 import httpx
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -53,14 +54,23 @@ _APPS: dict[int, "_AppState"] = {}
 
 
 class _AppState:
-    """Per-FastAPI-app mutable state. Currently just the track cache."""
+    """Per-FastAPI-app mutable state.
+
+    Two fields:
+
+    - ``active_folder``: the folder the server was started with (via
+      ``create_app(active_folder=...)`` / ``randonneur serve --directory
+      <path>``). The folder is fixed for the server's lifetime; the
+      UI shows it as read-only information.
+    - ``track_cache``: id → Track. Populated lazily as the folder is
+      listed, used by the per-track endpoints. We don't persist this
+      — the file on disk is the source of truth; a restart is a clean
+      slate. The cache also lets the folder summary and the track
+      detail share the same parsed object (no re-parse on click).
+    """
 
     def __init__(self) -> None:
-        # id → Track. Populated lazily as the folder is listed, used by the
-        # per-track endpoints. We don't persist this — the file on disk is
-        # the source of truth; a restart is a clean slate. The cache also
-        # lets the folder summary and the track detail share the same parsed
-        # object (no re-parse on click).
+        self.active_folder: Path | None = None
         self.track_cache: dict[str, gpx_loader.Track] = {}
 
 
@@ -186,11 +196,21 @@ def _get_cached(app: FastAPI, track_id: str) -> gpx_loader.Track:
 # ─── App factory ──────────────────────────────────────────────────────────────
 
 
-def create_app(static_dir: Path | None = None) -> FastAPI:
+def create_app(
+    static_dir: Path | None = None,
+    *,
+    active_folder: Path | None = None,
+) -> FastAPI:
     """Build the FastAPI app.
 
     ``static_dir`` is injected so tests can point at a temp folder; the
     production server (server_thread) uses the package's ``static/``.
+
+    ``active_folder`` is the folder the server was started with. The
+    CLI (``randonneur serve --directory <path>``) passes it in; tests
+    inject a temp folder the same way. The folder is fixed for the
+    server's lifetime — the UI shows it read-only, restart with a new
+    path to change it.
 
     A lifespan handler is registered so the watcher task is stopped
     cleanly on app shutdown — without it, a Ctrl-C leaves a dangling
@@ -207,18 +227,34 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
         # in a handler, the TestClient's per-request portal would
         # cancel it on handler return.
         await watcher.start(_app)
+        # If the app was created with a known folder (the CLI case),
+        # point the watcher at it before the first HTTP request so the
+        # hot-reload channel is live from the moment the UI connects.
+        if active_folder is not None:
+            await watcher.set_active_folder(_app, active_folder)
         try:
             yield
         finally:
             await watcher.shutdown(_app)
 
     app = FastAPI(title="randonneur", version="0.1.0", lifespan=lifespan)
+    if active_folder is not None:
+        # Stored in per-app state (keyed on id(app)) so multiple apps
+        # in one process — only tests today — each have their own
+        # folder. The handler below reads from this same state.
+        _state_for(app).active_folder = active_folder
 
     @app.get("/api/folder", response_model=FolderResponse)
-    async def api_folder(path: Annotated[str | None, Query()] = None) -> FolderResponse:
-        if path is None:
+    async def api_folder() -> FolderResponse:
+        # The folder is set at server start (``create_app(active_folder=...)``
+        # / ``randonneur serve --directory <path>``) and lives in the
+        # per-app state. A request handler is not the place to change it
+        # — the folder is fixed for the server's lifetime. ``None`` means
+        # "the server was started without --directory" (e.g. an embedded
+        # test app); the UI then just shows the empty state.
+        folder = _state_for(app).active_folder
+        if folder is None:
             return FolderResponse(path=None, tracks=[])
-        folder = Path(path).expanduser()
         if not folder.is_dir():
             raise HTTPException(status_code=404, detail=f"folder not found: {folder}")
 
@@ -255,10 +291,10 @@ def create_app(static_dir: Path | None = None) -> FastAPI:
                 )
             )
         _log.info("Folder %s: %d track(s), %d error(s)", folder, len(tracks), len(errors))
-        # Point the watcher at this folder (no-op if unchanged). This
-        # is fire-and-forget at the broker level — the handler doesn't
-        # wait for an awatch attach, so a slow first attach never
-        # delays the response.
+        # The folder is already set on the watcher at startup (via
+        # ``create_app`` / the lifespan), so this is a no-op when the
+        # folder matches. Kept for the (currently dead) embedded-test
+        # case where active_folder is set after the lifespan ran.
         await watcher.set_active_folder(app, folder)
         return FolderResponse(path=str(folder), tracks=tracks, errors=errors)
 

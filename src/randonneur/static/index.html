@@ -12,17 +12,10 @@
 <body>
   <header class="app-header">
     <h1>randonneur</h1>
-    <form id="folder-form" class="folder-form" autocomplete="off">
-      <label for="folder-input" class="visually-hidden">Folder path</label>
-      <input
-        id="folder-input"
-        type="text"
-        placeholder="/Users/you/Tracks"
-        spellcheck="false"
-        required
-      />
-      <button type="submit">Load</button>
-    </form>
+    <div class="folder-info">
+      <span class="folder-info-label">Folder</span>
+      <span id="folder-path" class="folder-path" aria-live="polite"></span>
+    </div>
     <div class="folder-status" id="folder-status" aria-live="polite"></div>
     <button
       id="settings-button"

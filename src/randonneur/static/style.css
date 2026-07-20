@@ -47,27 +47,40 @@ html, body {
   font-weight: 600;
 }
 
-.folder-form {
+.folder-info {
+  /* The folder path is set at server start (``randonneur serve --directory
+     <path>``) and is fixed for the server's lifetime. Render it as
+     read-only information in the header — the user can see what folder
+     is loaded but can't change it from the UI (restart the server with
+     a new --directory to switch). */
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 
-#folder-input {
-  flex: 1;
-  min-width: 240px;
-  padding: 6px 10px;
+.folder-info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #57606a;
+  flex-shrink: 0;
+}
+
+.folder-path {
   font-size: 13px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  background: #f6f8fa;
+  color: #1f2328;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
-#folder-input:focus {
-  outline: 2px solid #0969da;
-  outline-offset: -1px;
-  background: #ffffff;
+.folder-path.empty {
+  color: #8c959f;
+  font-style: italic;
 }
 
 button {
@@ -82,14 +95,6 @@ button {
 }
 
 button:hover { background: #eaeef2; }
-
-button[type="submit"] {
-  background: #2da44e;
-  color: #ffffff;
-  border-color: #2c974b;
-}
-
-button[type="submit"]:hover { background: #2c974b; }
 
 .folder-status {
   font-size: 12px;

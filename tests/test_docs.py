@@ -78,6 +78,16 @@ def test_readme_mentions_every_cli_subcommand() -> None:
         )
 
 
+def test_readme_documents_required_cli_options() -> None:
+    # The folder is now a required ``--directory`` flag on ``serve``;
+    # a user who skips the README and types bare ``randonneur serve``
+    # gets a clear Click error, but the README is still the
+    # authoritative reference for how to start the server. Pin the
+    # flag here so a future flag rename is caught in CI.
+    text = README.read_text(encoding="utf-8")
+    assert "--directory" in text, "README.rst does not document the --directory flag"
+
+
 def test_readme_mentions_every_env_var() -> None:
     # The Thunderforest env var is the only one the app reads;
     # if we add another, this test will fail until the README

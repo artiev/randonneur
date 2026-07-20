@@ -20,17 +20,33 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 @pytest.fixture
 def client() -> TestClient:
+    """A TestClient with no active folder (used by tests for the empty / 404 / 503 paths)."""
     return TestClient(create_app())
+
+
+@pytest.fixture
+def make_client():
+    """Factory for TestClient instances with a configured folder.
+
+    The server was changed in commit 2 to read the active folder from
+    the per-app state (set via ``create_app(active_folder=...)``) rather
+    than from a ``?path=`` query param. Tests that want a working
+    ``/api/folder`` need to inject their temp folder at app creation.
+    """
+    def _make(folder: Path | None = None) -> TestClient:
+        return TestClient(create_app(active_folder=folder))
+    return _make
 
 
 # ─── Happy path ──────────────────────────────────────────────────────────────
 
 
-def test_folder_lists_all_tracks(client: TestClient, tmp_path: Path) -> None:
+def test_folder_lists_all_tracks(make_client, tmp_path: Path) -> None:
+    client = make_client(tmp_path)
     for name in ("elevation_gaps.gpx", "multi_segment.gpx"):
         (tmp_path / name).write_bytes((FIXTURES / name).read_bytes())
 
-    resp = client.get("/api/folder", params={"path": str(tmp_path)})
+    resp = client.get("/api/folder")
     assert resp.status_code == 200
     body = resp.json()
     assert body["path"] == str(tmp_path)
@@ -39,12 +55,13 @@ def test_folder_lists_all_tracks(client: TestClient, tmp_path: Path) -> None:
     assert names == ["elevation_gaps", "multi_segment"]
 
 
-def test_track_summary_shape_is_stable(client: TestClient, tmp_path: Path) -> None:
+def test_track_summary_shape_is_stable(make_client, tmp_path: Path) -> None:
+    client = make_client(tmp_path)
     # The UI depends on these exact field names; any rename here breaks
     # the client side.
     (tmp_path / "multi_segment.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
 
-    body = client.get("/api/folder", params={"path": str(tmp_path)}).json()
+    body = client.get("/api/folder").json()
     track = body["tracks"][0]
     assert set(track.keys()) == {
         "id", "name", "color", "points", "distance_km", "elev_gain_m", "bbox"
@@ -66,29 +83,38 @@ def test_folder_with_no_path_returns_empty(client: TestClient) -> None:
     assert body == {"path": None, "tracks": [], "errors": []}
 
 
-def test_folder_with_missing_path_returns_404(client: TestClient, tmp_path: Path) -> None:
-    missing = tmp_path / "does-not-exist"
-    resp = client.get("/api/folder", params={"path": str(missing)})
+def test_folder_with_missing_path_returns_404(make_client, tmp_path: Path) -> None:
+    # A folder that was valid at server start but is gone now (e.g. the
+    # user moved the directory between server runs and didn't restart).
+    # The server still has it in per-app state; the handler detects the
+    # missing directory and 404s rather than crashing.
+    folder = tmp_path / "exists"
+    folder.mkdir()
+    client = make_client(folder)
+    (folder).rmdir()  # remove after the app has captured the path
+    resp = client.get("/api/folder")
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"]
 
 
-def test_folder_with_empty_directory_returns_empty_tracks(client: TestClient, tmp_path: Path) -> None:
-    body = client.get("/api/folder", params={"path": str(tmp_path)}).json()
+def test_folder_with_empty_directory_returns_empty_tracks(make_client, tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    body = client.get("/api/folder").json()
     assert body["tracks"] == []
     assert body["errors"] == []
 
 
 def test_folder_with_one_bad_file_reports_error_and_keeps_good_ones(
-    client: TestClient, tmp_path: Path
+    make_client, tmp_path: Path,
 ) -> None:
     # Real behaviour the UI depends on: one malformed file must not
     # blank the whole folder. The good tracks must still load, and the
     # bad file must be named in the errors list.
+    client = make_client(tmp_path)
     (tmp_path / "good.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
     (tmp_path / "bad.gpx").write_text("not xml at all")
 
-    body = client.get("/api/folder", params={"path": str(tmp_path)}).json()
+    body = client.get("/api/folder").json()
     assert [t["name"] for t in body["tracks"]] == ["good"]
     assert len(body["errors"]) == 1
     assert body["errors"][0].startswith("bad.gpx:")
@@ -123,7 +149,7 @@ def test_static_serves_index_html_and_assets() -> None:
     js = client.get("/app.js")
     assert js.status_code == 200
     assert "javascript" in js.headers["content-type"]
-    assert "loadFolder" in js.text  # the function the picker calls
+    assert "refreshFolder" in js.text  # the boot-time folder loader
     assert "loadSettings" in js.text  # the settings fetcher
     assert "setBaseLayer" in js.text  # the layer switcher
 
@@ -142,7 +168,7 @@ def test_index_contains_required_dom_ids() -> None:
     client = TestClient(create_app(static_dir=static_files_dir()))
 
     body = client.get("/").text
-    for id_ in ("folder-form", "folder-input",
+    for id_ in ("folder-path",
                 "track-list", "errors", "errors-list", "map",
                 "profile", "profile-title", "profile-stats",
                 # Settings panel. Pinning these IDs means a rename in
@@ -157,10 +183,11 @@ def test_index_contains_required_dom_ids() -> None:
 # ─── Per-track endpoint ─────────────────────────────────────────────────────
 
 
-def test_track_detail_returns_full_polyline(client: TestClient, tmp_path: Path) -> None:
+def test_track_detail_returns_full_polyline(make_client, tmp_path: Path) -> None:
+    client = make_client(tmp_path)
     (tmp_path / "multi_segment.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
-    client.get("/api/folder", params={"path": str(tmp_path)})
-    folder_body = client.get("/api/folder", params={"path": str(tmp_path)}).json()
+    client.get("/api/folder")
+    folder_body = client.get("/api/folder").json()
     track_id = folder_body["tracks"][0]["id"]
 
     detail = client.get(f"/api/tracks/{track_id}").json()
@@ -180,10 +207,12 @@ def test_track_detail_404_for_unknown_id(client: TestClient) -> None:
     assert "unknown track" in resp.json()["detail"]
 
 
-def test_track_cache_resets_on_new_folder(client: TestClient, tmp_path: Path) -> None:
-    # Tracks from folder A must not leak into folder B (different file,
-    # different id). This guards the bug where stale ids from a previous
-    # folder would silently 404 mid-session.
+def test_track_cache_resets_on_new_folder(make_client, tmp_path: Path) -> None:
+    # The folder is fixed at server start, so "switching folders" is
+    # modelled as restarting with a new ``create_app(active_folder=...)``.
+    # The per-app cache must be replaced wholesale (not merged with
+    # the previous app's), otherwise stale ids from a previous folder
+    # would silently 404 mid-session after a restart.
     folder_a = tmp_path / "a"
     folder_b = tmp_path / "b"
     folder_a.mkdir()
@@ -191,14 +220,15 @@ def test_track_cache_resets_on_new_folder(client: TestClient, tmp_path: Path) ->
     (folder_a / "a.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
     (folder_b / "b.gpx").write_bytes((FIXTURES / "elevation_gaps.gpx").read_bytes())
 
-    a_id = client.get("/api/folder", params={"path": str(folder_a)}).json()["tracks"][0]["id"]
-    b_id = client.get("/api/folder", params={"path": str(folder_b)}).json()["tracks"][0]["id"]
+    client_a = make_client(folder_a)
+    client_b = make_client(folder_b)
+    a_id = client_a.get("/api/folder").json()["tracks"][0]["id"]
+    b_id = client_b.get("/api/folder").json()["tracks"][0]["id"]
     assert a_id != b_id
 
-    # After loading B, the A id should 404.
-    client.get("/api/folder", params={"path": str(folder_b)})
-    assert client.get(f"/api/tracks/{a_id}").status_code == 404
-    assert client.get(f"/api/tracks/{b_id}").status_code == 200
+    # After restart, the new app must not serve the previous app's id.
+    assert client_b.get(f"/api/tracks/{a_id}").status_code == 404
+    assert client_b.get(f"/api/tracks/{b_id}").status_code == 200
 
 
 def test_track_cache_is_per_app(tmp_path: Path) -> None:
@@ -210,20 +240,19 @@ def test_track_cache_is_per_app(tmp_path: Path) -> None:
 
     server.reset_for_tests()
     try:
-        app_a = create_app()
-        app_b = create_app()
-        client_a = TestClient(app_a)
-        client_b = TestClient(app_b)
-
         folder_a = tmp_path / "a"
         folder_b = tmp_path / "b"
+        app_a = create_app(active_folder=folder_a)
+        app_b = create_app(active_folder=folder_b)
+        client_a = TestClient(app_a)
+        client_b = TestClient(app_b)
         folder_a.mkdir()
         folder_b.mkdir()
         (folder_a / "a.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
         (folder_b / "b.gpx").write_bytes((FIXTURES / "elevation_gaps.gpx").read_bytes())
 
-        a_id = client_a.get("/api/folder", params={"path": str(folder_a)}).json()["tracks"][0]["id"]
-        b_id = client_b.get("/api/folder", params={"path": str(folder_b)}).json()["tracks"][0]["id"]
+        a_id = client_a.get("/api/folder").json()["tracks"][0]["id"]
+        b_id = client_b.get("/api/folder").json()["tracks"][0]["id"]
         assert a_id != b_id
 
         # After B is loaded on app_b, app_a must still serve a_id (the
@@ -239,9 +268,10 @@ def test_track_cache_is_per_app(tmp_path: Path) -> None:
 # ─── Profile endpoint ───────────────────────────────────────────────────────
 
 
-def test_profile_returns_aligned_arrays(client: TestClient, tmp_path: Path) -> None:
+def test_profile_returns_aligned_arrays(make_client, tmp_path: Path) -> None:
+    client = make_client(tmp_path)
     (tmp_path / "multi_segment.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
-    track_id = client.get("/api/folder", params={"path": str(tmp_path)}).json()["tracks"][0]["id"]
+    track_id = client.get("/api/folder").json()["tracks"][0]["id"]
 
     body = client.get(f"/api/tracks/{track_id}/profile").json()
     assert set(body.keys()) == {"id", "name", "color", "distances_km", "elevations_m"}
@@ -259,12 +289,13 @@ def test_profile_returns_aligned_arrays(client: TestClient, tmp_path: Path) -> N
 
 
 def test_profile_substitutes_zero_for_missing_elevation(
-    client: TestClient, tmp_path: Path
+    make_client, tmp_path: Path,
 ) -> None:
+    client = make_client(tmp_path)
     (tmp_path / "elevation_gaps.gpx").write_bytes(
         (FIXTURES / "elevation_gaps.gpx").read_bytes()
     )
-    track_id = client.get("/api/folder", params={"path": str(tmp_path)}).json()["tracks"][0]["id"]
+    track_id = client.get("/api/folder").json()["tracks"][0]["id"]
 
     body = client.get(f"/api/tracks/{track_id}/profile").json()
     # The fixture has a None at index 1; it must come back as 0.0,
@@ -279,12 +310,13 @@ def test_profile_404_for_unknown_id(client: TestClient) -> None:
     assert "unknown track" in resp.json()["detail"]
 
 
-def test_profile_and_track_detail_share_cache(client: TestClient, tmp_path: Path) -> None:
+def test_profile_and_track_detail_share_cache(make_client, tmp_path: Path) -> None:
+    client = make_client(tmp_path)
     # Sanity: hitting /profile must not re-parse. We can't time it, but
     # we can confirm both endpoints return the same id and color (i.e.
     # they're hitting the same Track object).
     (tmp_path / "multi_segment.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
-    track_id = client.get("/api/folder", params={"path": str(tmp_path)}).json()["tracks"][0]["id"]
+    track_id = client.get("/api/folder").json()["tracks"][0]["id"]
 
     detail = client.get(f"/api/tracks/{track_id}").json()
     profile = client.get(f"/api/tracks/{track_id}/profile").json()
@@ -463,7 +495,7 @@ def test_settings_marks_thunderforest_available_with_key(
 
 
 def test_websocket_receives_change_after_folder_load(
-    client: TestClient, tmp_path: Path
+    make_client, tmp_path: Path,
 ) -> None:
     # Open a WS, load a folder, touch a file, expect a "changed"
     # message. This is the full wiring smoke: server's lifespan
@@ -471,17 +503,20 @@ def test_websocket_receives_change_after_folder_load(
     import threading
     import time
 
+    folder = tmp_path / "live"
+    folder.mkdir()
+    (folder / "a.gpx").write_bytes(
+        (FIXTURES / "multi_segment.gpx").read_bytes()
+    )
+    # The folder is plumbed in at create_app time, so the lifespan
+    # handler points the watcher at it before the WS connects.
+    client = make_client(folder)
+
     # ``with client:`` runs the FastAPI lifespan (which starts the
     # long-lived watcher task). Without it, ``watcher.start`` is
     # never called and the WS receives nothing.
     with client:
         with client.websocket_connect("/api/ws") as ws:
-            folder = tmp_path / "live"
-            folder.mkdir()
-            (folder / "a.gpx").write_bytes(
-                (FIXTURES / "multi_segment.gpx").read_bytes()
-            )
-            client.get("/api/folder", params={"path": str(folder)})
             # Give watchfiles time to attach the inotify/FSEvents
             # watch. We don't need the attach snapshot itself — the
             # watcher broadcasts it as a normal "changed" event, and
@@ -535,7 +570,7 @@ def test_websocket_receives_change_after_folder_load(
 
 
 def test_websocket_disconnect_unregisters_client(
-    client: TestClient, tmp_path: Path
+    make_client, tmp_path: Path,
 ) -> None:
     # Closing the WS must remove the client from the broker so the
     # next broadcast doesn't enqueue to a dead socket.
@@ -545,8 +580,8 @@ def test_websocket_disconnect_unregisters_client(
     folder.mkdir()
     (folder / "a.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
 
+    client = make_client(folder)
     with client:
-        client.get("/api/folder", params={"path": str(folder)})
         with client.websocket_connect("/api/ws") as ws:
             st = watcher.state_for(client.app)
             assert len(st.clients) == 1

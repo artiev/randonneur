@@ -12,6 +12,11 @@ parent context, once with no context), and there is no reliable signal
 in the callback to tell the two apart. Inspecting ``sys.argv`` directly
 is the only way to keep the no-arg form working without printing
 "randonneur" twice when the user actually types ``randonneur serve``.
+
+The folder is a required ``--directory`` flag on ``serve``: the browser
+cannot expose an absolute path from a native picker (File System Access
+API returns opaque handles), so the server picks the folder at start
+time and the UI shows it read-only. Matches the photogravy CLI shape.
 """
 
 from __future__ import annotations
@@ -40,16 +45,34 @@ def cli() -> None:
 
 
 @cli.command()
+@click.option(
+    "--directory", "-d",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Folder containing the .gpx tracks (required). Fixed for the server's lifetime.",
+)
 @click.option("--host", default=DEFAULT_HOST, show_default=True, help="Bind address.")
 @click.option("--port", default=DEFAULT_PORT, show_default=True, type=int, help="Bind port.")
 @click.option("--no-browser", is_flag=True, help="Don't auto-open the browser.")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose (DEBUG) logging.")
-def serve(host: str, port: int, no_browser: bool, verbose: bool) -> None:
+def serve(
+    directory: Path,
+    host: str,
+    port: int,
+    no_browser: bool,
+    verbose: bool,
+) -> None:
     """Start the local server and open the UI (default)."""
     log.configure_logging(verbose=verbose)
-    _log.info("Starting randonneur %s on http://%s:%d", __version__, host, port)
+    folder = directory.expanduser().resolve()
+    _log.info("Starting randonneur %s on http://%s:%d (folder: %s)",
+              __version__, host, port, folder)
 
-    app = create_app(static_dir=static_files_dir())
+    # The folder is plumbed into the per-app state via ``create_app``;
+    # the API handler reads it from there. The lifespan also points the
+    # folder watcher at it on startup, so the hot-reload channel is
+    # live before the first HTTP request.
+    app = create_app(static_dir=static_files_dir(), active_folder=folder)
     config = uvicorn.Config(app, host=host, port=port, log_level="warning", access_log=False)
     server = uvicorn.Server(config)
 
@@ -112,7 +135,10 @@ def discover(folder: Path) -> None:
 def main() -> None:
     """Standalone entry point: route to ``serve`` if no subcommand given."""
     # Help / version flags go to Click. Everything else with no subcommand
-    # falls through to serve.
+    # falls through to ``serve``, which requires ``--directory``. The
+    # user gets a clean Click error ("Missing option '--directory'")
+    # pointing them at the flag — better than silently picking a folder
+    # they didn't ask for.
     if len(sys.argv) == 1:
         sys.argv.append("serve")
     cli.main()
