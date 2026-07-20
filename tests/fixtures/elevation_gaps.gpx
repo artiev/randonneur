@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="randonneur-test"
+  xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Elevation gaps test</name>
+    <trkseg>
+      <trkpt lat="46.5000" lon="11.4000">
+        <ele>2000</ele>
+      </trkpt>
+      <trkpt lat="46.5010" lon="11.4010">
+        <!-- no <ele>: simulates a GPS dropout -->
+      </trkpt>
+      <trkpt lat="46.5020" lon="11.4020">
+        <ele>2050</ele>
+      </trkpt>
+      <trkpt lat="46.5030" lon="11.4030">
+        <ele>2030</ele>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

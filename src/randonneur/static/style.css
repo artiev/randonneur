@@ -1,0 +1,402 @@
+/* ─── randonneur UI ──────────────────────────────────────────────────────────
+ *
+ * Two-pane layout: sidebar (left) + map (top-right) + profile (bottom).
+ * The split between map and profile is fixed (1fr / 240px); making it
+ * draggable is cheap to add later.
+ */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #1f2328;
+  background: #f6f8fa;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+
+.app-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.folder-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#folder-input {
+  flex: 1;
+  min-width: 240px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+}
+
+#folder-input:focus {
+  outline: 2px solid #0969da;
+  outline-offset: -1px;
+  background: #ffffff;
+}
+
+button,
+.picker-button {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2328;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover,
+.picker-button:hover { background: #eaeef2; }
+
+button[type="submit"] {
+  background: #2da44e;
+  color: #ffffff;
+  border-color: #2c974b;
+}
+
+button[type="submit"]:hover { background: #2c974b; }
+
+.folder-status {
+  font-size: 12px;
+  color: #57606a;
+  min-width: 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.folder-status.error { color: #cf222e; }
+
+/* ─── App grid: sidebar | (map / profile) ────────────────────────────────── */
+
+.app-grid {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 1fr 240px;
+  grid-template-areas:
+    "sidebar map"
+    "sidebar profile";
+  height: calc(100vh - 49px); /* minus header */
+}
+
+.sidebar {
+  grid-area: sidebar;
+  background: #ffffff;
+  border-right: 1px solid #d0d7de;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.sidebar h2 {
+  margin: 0 12px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #57606a;
+}
+
+.track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.track-list li {
+  padding: 6px 12px;
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+
+.track-list li:hover { background: #f6f8fa; }
+
+.track-list li.selected {
+  background: #ddf4ff;
+  border-left-color: #0969da;
+}
+
+.track-list li .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.track-list li .name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-list li .stats {
+  font-size: 11px;
+  color: #57606a;
+  white-space: nowrap;
+}
+
+.track-list .empty-hint {
+  padding: 12px;
+  color: #57606a;
+  font-style: italic;
+  cursor: default;
+}
+
+.errors {
+  margin: 12px;
+  padding: 8px 12px;
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  border-radius: 6px;
+}
+
+.errors h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #7d4e00;
+}
+
+.errors ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #7d4e00;
+}
+
+/* ─── Map + profile panes ────────────────────────────────────────────────── */
+
+.map-pane,
+.profile-pane {
+  background: #ffffff;
+  border-bottom: 1px solid #d0d7de;
+  /* Flex column so the inner #map / #profile can use flex: 1 to
+     fill the row without depending on an explicit height. Without
+     this, .map-pane has no flex context and #map collapses to
+     height 0 (the bug that left the map blank even though Leaflet
+     itself was happily fetching tiles). .profile-pane already had
+     this; moved it up so both panes follow the same pattern. */
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-pane {
+  border-bottom: none;
+}
+
+#map,
+#profile {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 12px;
+  border-bottom: 1px solid #d0d7de;
+  font-size: 12px;
+}
+
+#profile-title {
+  font-weight: 600;
+  color: #1f2328;
+}
+
+#profile-stats {
+  color: #57606a;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #8c959f;
+  font-style: italic;
+}
+
+/* Leaflet container needs an explicit background or its controls flash
+   white before tiles arrive. Matches OpenTopoMap's basemap tone. */
+.leaflet-container {
+  background: #c8d3d9;
+  font-family: inherit;
+}
+
+/* ─── Settings ────────────────────────────────────────────────────────────── */
+
+.icon-button {
+  /* The ⚙ button in the header. Matches the header's other
+     controls in height and border so it doesn't look out of place. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: #1f2328;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button:hover { background: #eaeef2; }
+
+.icon-button[aria-expanded="true"] {
+  /* Subtle "open" state. The background flips so the user can
+     tell which button is the active one when the popover is up. */
+  background: #ddf4ff;
+  border-color: #0969da;
+}
+
+.settings-backdrop {
+  /* Covers the rest of the viewport when the popover is open so
+     a click anywhere outside dismisses it. Positioned in the
+     layout (not as an overlay) so it eats pointer events. */
+  position: fixed;
+  inset: 49px 0 0 0;  /* below the 49px header */
+  background: rgba(0, 0, 0, 0.05);
+  z-index: 10;
+}
+
+.settings-panel {
+  position: fixed;
+  top: 57px;       /* header (49px) + a hair of breathing room */
+  right: 16px;
+  width: 280px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 20;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-body {
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-group {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.settings-group legend {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #57606a;
+  padding: 0 0 4px;
+}
+
+.settings-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-source {
+  /* One radio-row per source. Looks like a list item rather than a
+     plain radio so the "missing key" hint reads naturally. */
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.settings-source:hover { background: #f6f8fa; }
+
+.settings-source input[type="radio"] {
+  margin-top: 3px;
+}
+
+.settings-source-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-source-hint {
+  font-size: 11px;
+  color: #cf222e;
+}
+
+.settings-source.disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.settings-source.disabled:hover { background: transparent; }
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+}

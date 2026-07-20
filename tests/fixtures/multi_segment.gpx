@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="randonneur-test"
+  xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Multi-segment test</name>
+    <trkseg>
+      <trkpt lat="46.5500" lon="11.4500">
+        <ele>2300</ele>
+      </trkpt>
+      <trkpt lat="46.5510" lon="11.4510">
+        <ele>2310</ele>
+      </trkpt>
+      <trkpt lat="46.5520" lon="11.4520">
+        <ele>2320</ele>
+      </trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="46.6000" lon="11.5000">
+        <ele>2400</ele>
+      </trkpt>
+      <trkpt lat="46.6010" lon="11.5010">
+        <ele>2410</ele>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

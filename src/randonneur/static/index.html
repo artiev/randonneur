@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>randonneur</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>randonneur</h1>
+    <form id="folder-form" class="folder-form" autocomplete="off">
+      <label for="folder-input" class="visually-hidden">Folder path</label>
+      <input
+        id="folder-input"
+        type="text"
+        placeholder="/Users/you/Tracks"
+        spellcheck="false"
+        required
+      />
+      <button type="submit">Load</button>
+      <label for="folder-picker" class="picker-button" title="Pick a folder (browser will not return the absolute path — paste it after)">
+        Pick…
+        <input id="folder-picker" type="file" webkitdirectory multiple hidden />
+      </label>
+    </form>
+    <div class="folder-status" id="folder-status" aria-live="polite"></div>
+    <button
+      id="settings-button"
+      class="icon-button"
+      type="button"
+      title="Settings"
+      aria-label="Settings"
+      aria-expanded="false"
+      aria-controls="settings-panel"
+    >⚙</button>
+  </header>
+
+  <!-- Settings popover. Hidden by default; toggled by #settings-button.
+       Positioned absolutely below the header so it overlays the map
+       pane without taking up layout space. Backdrop click closes it. -->
+  <div id="settings-backdrop" class="settings-backdrop" hidden></div>
+  <section
+    id="settings-panel"
+    class="settings-panel"
+    role="dialog"
+    aria-labelledby="settings-title"
+    hidden
+  >
+    <header class="settings-header">
+      <h2 id="settings-title">Settings</h2>
+      <button
+        id="settings-close"
+        class="icon-button"
+        type="button"
+        title="Close"
+        aria-label="Close settings"
+      >×</button>
+    </header>
+    <div class="settings-body">
+      <fieldset class="settings-group">
+        <legend>Base layer</legend>
+        <div id="settings-sources" class="settings-sources">
+          <!-- Populated from /api/settings. -->
+        </div>
+      </fieldset>
+      <fieldset class="settings-group">
+        <legend>Map controls</legend>
+        <label class="settings-toggle">
+          <input id="settings-scale" type="checkbox" />
+          <span>Show scale bar</span>
+        </label>
+      </fieldset>
+    </div>
+  </section>
+
+  <main class="app-grid">
+    <aside class="sidebar">
+      <h2>Tracks</h2>
+      <ul id="track-list" class="track-list" aria-label="GPX tracks">
+        <li class="empty-hint">No folder loaded.</li>
+      </ul>
+      <section id="errors" class="errors" hidden>
+        <h3>Could not parse</h3>
+        <ul id="errors-list"></ul>
+      </section>
+    </aside>
+
+    <section class="map-pane" aria-label="Map">
+      <div id="map"></div>
+    </section>
+
+    <section class="profile-pane" aria-label="Elevation profile">
+      <div class="profile-header">
+        <span id="profile-title">No track selected</span>
+        <span id="profile-stats"></span>
+      </div>
+      <div id="profile"></div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"
+          charset="utf-8"></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>
