@@ -114,6 +114,7 @@ class TrackSummary(BaseModel):
     points: int
     distance_km: float
     elev_gain_m: float
+    elev_loss_m: float
     bbox: tuple[float, float, float, float] = Field(description="(west, south, east, north)")
     metadata_name: str | None = None
     metadata_desc: str | None = None
@@ -130,6 +131,7 @@ class TrackDetail(BaseModel):
     color: str
     distance_km: float
     elev_gain_m: float
+    elev_loss_m: float
     bbox: tuple[float, float, float, float]
     points: list[Point]
     metadata_name: str | None = None
@@ -335,6 +337,7 @@ def create_app(
                     points=len(t.points),
                     distance_km=round(t.distance_km, 3),
                     elev_gain_m=round(t.elev_gain_m, 1),
+                    elev_loss_m=round(t.elev_loss_m, 1),
                     bbox=t.bbox,
                     metadata_name=t.metadata_name,
                     metadata_desc=t.metadata_desc,
@@ -360,6 +363,7 @@ def create_app(
             color=t.color,
             distance_km=round(t.distance_km, 3),
             elev_gain_m=round(t.elev_gain_m, 1),
+            elev_loss_m=round(t.elev_loss_m, 1),
             bbox=t.bbox,
             # Sending the full point list over the wire is fine for v1
             # — typical GPX files are a few hundred points; 10,000+ is
@@ -430,6 +434,7 @@ def create_app(
             points=len(updated.points),
             distance_km=round(updated.distance_km, 3),
             elev_gain_m=round(updated.elev_gain_m, 1),
+            elev_loss_m=round(updated.elev_loss_m, 1),
             bbox=updated.bbox,
             metadata_name=updated.metadata_name,
             metadata_desc=updated.metadata_desc,

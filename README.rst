@@ -139,7 +139,7 @@ FastAPI + Uvicorn.
     │ ☐ tour3.gpx  │   OpenTopoMap tiles + polyline overlays     │
     │              │   hover tooltip · click to focus            │
     │ 12.4 km      │                                             │
-    │ ↑ 870 m      │                                             │
+    │ ↑ 870 ↓ 420 m │                                             │
     │              │                                             │
     ├──────────────┴─────────────────────────────────────────────┤
     │         ELEVATION PROFILE (Plotly)                         │

@@ -69,12 +69,13 @@ def test_parse_single_segment_with_elevation_gap() -> None:
     assert track.points[3].ele == 2030.0
 
 
-def test_parse_elev_gain_skips_gap_and_counts_only_ascents() -> None:
+def test_parse_elev_gain_and_loss_skips_gap() -> None:
     # Elevations: 2000, None, 2050, 2030.
-    # Ascents: 2050-2000 = 50. The 2030 is a descent (no gain).
-    # The None gap must not be counted as ascent.
+    # Gain: 2050-2000 = 50 (the None gap is skipped, not counted as ascent).
+    # Loss: 2030-2050 = -20 → 20 m of descent (a positive magnitude).
     track = gpx_loader.parse(FIXTURES / "elevation_gaps.gpx")
     assert track.elev_gain_m == pytest.approx(50.0)
+    assert track.elev_loss_m == pytest.approx(20.0)
 
 
 def test_parse_multi_segment_flattens_in_order() -> None:

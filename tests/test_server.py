@@ -65,7 +65,7 @@ def test_track_summary_shape_is_stable(make_client, tmp_path: Path) -> None:
     body = client.get("/api/folder").json()
     track = body["tracks"][0]
     assert set(track.keys()) == {
-        "id", "name", "color", "points", "distance_km", "elev_gain_m", "bbox",
+        "id", "name", "color", "points", "distance_km", "elev_gain_m", "elev_loss_m", "bbox",
         "metadata_name", "metadata_desc", "metadata_author",
         "track_name", "track_desc",
     }
@@ -318,7 +318,7 @@ def test_track_detail_returns_full_polyline(make_client, tmp_path: Path) -> None
 
     detail = client.get(f"/api/tracks/{track_id}").json()
     assert set(detail.keys()) == {
-        "id", "name", "color", "distance_km", "elev_gain_m", "bbox", "points",
+        "id", "name", "color", "distance_km", "elev_gain_m", "elev_loss_m", "bbox", "points",
         "metadata_name", "metadata_desc", "metadata_author",
         "track_name", "track_desc",
     }

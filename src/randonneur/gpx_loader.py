@@ -55,6 +55,7 @@ class Track:
     bbox: tuple[float, float, float, float]  # (west, south, east, north)
     distance_km: float
     elev_gain_m: float  # sum of positive elevation deltas only
+    elev_loss_m: float  # sum of negative elevation deltas, as a positive magnitude
     # GPX metadata (from <metadata>). The first <trk>'s <name>/<desc>
     # are exposed as track_name/track_desc; multi-track files would
     # need an extra API call to enumerate, but every fixture in this
@@ -128,22 +129,31 @@ def _bbox(points: list[Point]) -> tuple[float, float, float, float]:
     return (west, south, east, north)
 
 
-def _elev_gain(points: list[Point]) -> float:
-    """Sum of positive elevation deltas in metres.
+def _elevation_gain_loss(points: list[Point]) -> tuple[float, float]:
+    """Sum of positive and negative elevation deltas in metres.
 
-    Gaps (None) are skipped without counting the gap as ascent. This
-    matches what hikers care about: actual climbed metres, not noise
-    from missing samples.
+    Returns ``(gain, loss)`` where gain is total ascent and loss is
+    total descent as a *positive* magnitude (the absolute sum of the
+    negative deltas). Gaps (None) are skipped without counting the gap
+    as either — this matches what hikers care about: actual climbed and
+    descended metres, not noise from missing samples. One pass over the
+    points so gain and loss share the same gap-skipping rule and can't
+    drift apart.
     """
     gain = 0.0
+    loss = 0.0
     prev: float | None = None
     for p in points:
         if p.ele is None:
             continue
-        if prev is not None and p.ele > prev:
-            gain += p.ele - prev
+        if prev is not None:
+            dy = p.ele - prev
+            if dy > 0:
+                gain += dy
+            elif dy < 0:
+                loss += -dy
         prev = p.ele
-    return gain
+    return gain, loss
 
 
 # ─── Public API ───────────────────────────────────────────────────────────────
@@ -177,6 +187,7 @@ def parse(path: Path) -> Track:
         gpx = gpxpy.parse(f)
     points = _flatten_points(gpx)
     track_id = _track_id(path)
+    elev_gain, elev_loss = _elevation_gain_loss(points)
     # GPX display metadata. We grab the first <trk> only — multi-track
     # files are rare in practice (and the loader already flattens
     # across them), so "first trk wins" is the obvious rule. None vs
@@ -197,7 +208,8 @@ def parse(path: Path) -> Track:
         # point array; the two numbers can differ by a fraction of a
         # percent and that's fine.
         distance_km=gpx.length_3d() / 1000.0,
-        elev_gain_m=_elev_gain(points),
+        elev_gain_m=elev_gain,
+        elev_loss_m=elev_loss,
         metadata_name=gpx.name or None,
         metadata_desc=gpx.description or None,
         metadata_author=gpx.author_name or None,

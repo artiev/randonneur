@@ -1114,3 +1114,30 @@ tests.)
   (`naturalWidth > 0`), renders at 20px, the title is "RANDONNEUR",
   the logo + title share one brand box, and the header change
   introduced no viewport overflow.
+- 2026-07-21 — Commit 23 (`Feat`): **Separate total elevation gain
+  and loss instead of a single cumulated figure.** The stats had
+  shown only total ascent (`↑ gain`); the rework adds total descent
+  as a separate stat so the two directions are visible
+  independently. `gpx_loader.Track` gains `elev_loss_m` (sum of
+  negative deltas as a positive magnitude); `_elev_gain` is
+  replaced by `_elevation_gain_loss(points) -> (gain, loss)` — one
+  pass, so gain and loss share the same gap-skipping rule and can't
+  drift apart. `TrackSummary` and `TrackDetail` carry `elev_loss_m`,
+  shipped on the wire in the folder list, track detail, and PATCH
+  response. UI: the sidebar `formatStats` and the profile
+  `formatProfileStats` both show `↑ gain m · ↓ loss m` (the profile
+  line keeps the min–max range too; it recomputes gain/loss
+  client-side from the elevation array, as it already did for gain).
+  While there, fixed a latent quirk in the sidebar formatter: gain
+  ≥ 1000 m was being rendered as *km* (`1.5 km`) — a copy-paste from
+  the distance formatter; elevation in km is nonsensical. Both gain
+  and loss are now always metres. Tests: the elevation_gaps test
+  asserts `elev_loss_m == 20.0` (2000/None/2050/2030 → +50 gain,
+  -20 loss) and is renamed; the two server shape tests include
+  `elev_loss_m`; the README ASCII sketch stat line shows
+  `↑ 870 ↓ 420 m`. No net-elevation concept was added — gain and
+  loss are independent magnitudes, which is what hikers read.
+  `pytest tests/` 110/110; README re-validated with
+  `docutils --strict`; headless Chrome confirmed both the sidebar
+  and the profile stats lines show separate ↑ and ↓ metre values
+  (and no `km` misused for elevation).

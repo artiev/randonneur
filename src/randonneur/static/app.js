@@ -580,15 +580,19 @@
 
   function formatProfileStats(data) {
     const total = data.distances_km[data.distances_km.length - 1] || 0;
-    // Sum positive elevation deltas (skip None / 0 substitutes).
+    // Sum positive and negative elevation deltas separately (skip the
+    // None→0 substitutes profile.compute_profile inserts): gain is total
+    // ascent, loss is total descent as a positive magnitude.
     let gain = 0;
+    let loss = 0;
     for (let i = 1; i < data.elevations_m.length; i++) {
       const dy = data.elevations_m[i] - data.elevations_m[i - 1];
       if (dy > 0) gain += dy;
+      else if (dy < 0) loss += -dy;
     }
     const minE = Math.min(...data.elevations_m);
     const maxE = Math.max(...data.elevations_m);
-    return `${total.toFixed(2)} km · ↑ ${Math.round(gain)} m · ${Math.round(minE)}–${Math.round(maxE)} m`;
+    return `${total.toFixed(2)} km · ↑ ${Math.round(gain)} m · ↓ ${Math.round(loss)} m · ${Math.round(minE)}–${Math.round(maxE)} m`;
   }
 
   function hexToRgba(hex, alpha) {
@@ -999,10 +1003,12 @@
 
   function formatStats(t) {
     const km = `${t.distance_km.toFixed(1)} km`;
-    const gain = t.elev_gain_m >= 1000
-      ? `${(t.elev_gain_m / 1000).toFixed(1)} km`
-      : `${Math.round(t.elev_gain_m)} m`;
-    return `${km} · ↑${gain}`;
+    // Elevation is always shown in metres — the old ≥1000→km branch was
+    // a copy-paste from the distance formatter (elevation gain in km is
+    // nonsensical). Gain and loss are separate stats now, both in metres.
+    const gain = `${Math.round(t.elev_gain_m)} m`;
+    const loss = `${Math.round(t.elev_loss_m)} m`;
+    return `${km} · ↑${gain} · ↓${loss}`;
   }
 
   // ─── Boot ────────────────────────────────────────────────────────────────
