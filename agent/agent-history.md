@@ -1558,3 +1558,12 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   (appended to `test_headless.py`, then reverted pre-commit)
   confirmed first click selects, second click on the same row
   deselects.
+- 2026-07-21 — Commit 30 (`Data`): **Add the Brenon (long trip)
+  track.** Third route under `data/FR-83/`, alongside the two
+  Bargème trips — `Bargème (long trip)` (11.4 km), `Bargème (short
+  trip)` (9.6 km), and now `Brenon (long trip)` (9.1 km, 393 pts,
+  ±10-smoothed gain/loss 313/312 m), all exported from
+  onthegomap.com. Per the new §6 rule (committed next), each new
+  GPX track is its own `Data:` commit — data additions are kept
+  separate from code so a track import doesn't ride along on a
+  feature/fix commit and clutter its diff.
