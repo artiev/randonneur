@@ -767,21 +767,29 @@ def test_tile_endpoint_503_for_unconfigured_source(
 
 def test_settings_lists_known_sources(client: TestClient) -> None:
     # The settings panel needs the full whitelist, with availability
-    # flags. OpenTopoMap is always available; Thunderforest's
-    # availability depends on the env (see the next test).
+    # flags. Free sources (OpenTopoMap, OpenStreetMap, ESRI satellite)
+    # are always available; the Thunderforest layers' availability
+    # depends on the env (see the next test). The source order matches
+    # TILE_URL_TEMPLATES insertion order (free providers first, then
+    # the Thunderforest family) — the panel renders in this order.
     body = client.get("/api/settings").json()
     assert set(body.keys()) == {"current_source", "sources"}
     assert body["current_source"] == "opentopomap"
-    ids = {s["id"] for s in body["sources"]}
-    assert ids == {"opentopomap", "thunderforest-outdoors"}
+    ids = [s["id"] for s in body["sources"]]
+    assert ids == [
+        "opentopomap", "openstreetmap", "esri-satellite",
+        "thunderforest-outdoors", "thunderforest-landscape",
+        "thunderforest-transport", "thunderforest-cycle",
+    ]
 
 
 def test_settings_marks_thunderforest_unavailable_without_key(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Without RANDONNEUR_THUNDERFOREST_KEY, Thunderforest is in the
-    # whitelist (the panel can render it as "missing key") but
-    # flagged unavailable.
+    # Without RANDONNEUR_THUNDERFOREST_KEY, every Thunderforest layer is
+    # in the whitelist (the panel renders it as "API key required") but
+    # flagged unavailable — not just the original Outdoors entry, but
+    # all variants, since the key gate is `sid.startswith("thunderforest")`.
     monkeypatch.delenv("RANDONNEUR_THUNDERFOREST_KEY", raising=False)
     body = client.get("/api/settings").json()
     by_id = {s["id"]: s for s in body["sources"]}
@@ -789,19 +797,43 @@ def test_settings_marks_thunderforest_unavailable_without_key(
     assert by_id["opentopomap"]["needs_key"] is False
     assert by_id["thunderforest-outdoors"]["available"] is False
     assert by_id["thunderforest-outdoors"]["needs_key"] is True
+    # A variant follows the same rule (guards the generalized gate).
+    assert by_id["thunderforest-landscape"]["available"] is False
+    assert by_id["thunderforest-landscape"]["needs_key"] is True
 
 
 def test_settings_marks_thunderforest_available_with_key(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # When the key is set, the same endpoint reports Thunderforest
-    # as available. The key value itself is never returned.
+    # When the key is set, the same endpoint reports every Thunderforest
+    # layer as available. The key value itself is never returned.
     monkeypatch.setenv("RANDONNEUR_THUNDERFOREST_KEY", "test-key-abc")
     body = client.get("/api/settings").json()
     by_id = {s["id"]: s for s in body["sources"]}
     assert by_id["thunderforest-outdoors"]["available"] is True
+    assert by_id["thunderforest-landscape"]["available"] is True
     # Defence-in-depth: the secret must not leak into the response.
     assert "test-key-abc" not in str(body)
+
+
+def test_settings_free_sources_always_available(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The free sources need no env and are always available, with or
+    # without the Thunderforest key set. Pins the no-key contract for
+    # OpenStreetMap Standard and ESRI Satellite so a future "needs key"
+    # drift is a deliberate test update.
+    for key_set in (False, True):
+        if key_set:
+            monkeypatch.setenv("RANDONNEUR_THUNDERFOREST_KEY", "test-key-abc")
+        else:
+            monkeypatch.delenv("RANDONNEUR_THUNDERFOREST_KEY", raising=False)
+        body = client.get("/api/settings").json()
+        by_id = {s["id"]: s for s in body["sources"]}
+        assert by_id["openstreetmap"]["available"] is True
+        assert by_id["openstreetmap"]["needs_key"] is False
+        assert by_id["esri-satellite"]["available"] is True
+        assert by_id["esri-satellite"]["needs_key"] is False
 
 
 # ─── WebSocket hot-reload ────────────────────────────────────────────────────

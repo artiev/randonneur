@@ -71,42 +71,60 @@
       ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
     </header>
     <div class="settings-body">
-      <!-- Settings view: base layer + map controls. -->
+      <!-- Settings view: map provider + map configuration + track
+           configuration. The provider list (#settings-sources) is
+           populated from /api/settings. -->
       <div class="tab-view" data-view="settings" hidden>
         <fieldset class="settings-group">
-          <legend>Base layer</legend>
+          <legend>Map provider</legend>
+          <p class="settings-hint">
+            Choose the base map tile source. The Thunderforest layers
+            need a free API key set on the server
+            (<code>RANDONNEUR_THUNDERFOREST_KEY</code>); the others are
+            free.
+          </p>
           <div id="settings-sources" class="settings-sources">
             <!-- Populated from /api/settings. -->
           </div>
         </fieldset>
         <fieldset class="settings-group">
-          <legend>Map controls</legend>
-          <label class="settings-toggle">
+          <legend>Map configuration</legend>
+          <p class="settings-hint">
+            Display options for the map. The scale bar adds a metric
+            ruler in the bottom-left corner.
+          </p>
+          <label class="settings-option">
             <input id="settings-scale" type="checkbox" />
             <span>Show scale bar</span>
           </label>
         </fieldset>
         <fieldset class="settings-group">
-          <legend>Elevation smoothing</legend>
+          <legend>Track configuration</legend>
           <p class="settings-hint">
-            Gain/loss is smoothed to remove GPS elevation jitter before
-            summing. The window is ±N samples — the right N depends on
-            the track's sampling rate, shown in the profile stat line
-            (e.g. ±10 at 5 s/pt ≈ ±50 s).
+            How track statistics are computed.
           </p>
-          <div id="settings-smooth" class="settings-smooth">
-            <label class="settings-toggle">
-              <input type="radio" name="elev-smooth" value="5" />
-              <span>±5</span>
-            </label>
-            <label class="settings-toggle">
-              <input type="radio" name="elev-smooth" value="10" checked />
-              <span>±10 <em>(default)</em></span>
-            </label>
-            <label class="settings-toggle">
-              <input type="radio" name="elev-smooth" value="15" />
-              <span>±15</span>
-            </label>
+          <div class="settings-subgroup">
+            <h3 class="settings-subheading">Elevation smoothing</h3>
+            <p class="settings-hint">
+              Gain/loss is smoothed to remove GPS elevation jitter
+              before summing. The window is ±N samples — the right N
+              depends on the track's sampling rate, shown in the
+              profile stat line (e.g. ±10 at 5 s/pt ≈ ±50 s).
+            </p>
+            <div id="settings-smooth" class="settings-smooth">
+              <label class="settings-option">
+                <input type="radio" name="elev-smooth" value="5" />
+                <span>±5</span>
+              </label>
+              <label class="settings-option">
+                <input type="radio" name="elev-smooth" value="10" checked />
+                <span>±10 <em>(default)</em></span>
+              </label>
+              <label class="settings-option">
+                <input type="radio" name="elev-smooth" value="15" />
+                <span>±15</span>
+              </label>
+            </div>
           </div>
         </fieldset>
       </div>

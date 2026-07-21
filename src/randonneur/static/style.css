@@ -522,10 +522,22 @@ body.tab-open .app-grid {
 }
 
 .settings-body {
-  padding: 8px 12px 12px;
+  /* Outer padding around whichever tab-view is showing. The inter-
+     section gap lives on the settings view itself (below), not here —
+     the fieldsets are children of the tab-view, not of .settings-body,
+     so a gap here would space the two tab-views (one is always hidden),
+     not the sections. */
+  padding: 12px;
+}
+
+/* The settings view is the flex column whose gap spaces the three
+   fieldsets uniformly — the source of the consistent inter-section
+   rhythm. Scoped to the settings view so the Edit view keeps its own
+   layout. */
+.tab-view[data-view="settings"]:not([hidden]) {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .settings-group {
@@ -539,18 +551,30 @@ body.tab-open .app-grid {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #57606a;
-  padding: 0 0 4px;
+  /* Margin (not padding) for the legend→content gap so it composes
+     cleanly with the hint's own margin. */
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+/* Every radio and checkbox in the panel shares one accent colour —
+   the scale-bar checkbox, the smoothing radios and the provider
+   radios all use the sienna accent instead of the browser default. */
+.settings-group input[type="radio"],
+.settings-group input[type="checkbox"] {
+  accent-color: var(--color-accent);
 }
 
 .settings-sources {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .settings-source {
-  /* One radio-row per source. Looks like a list item rather than a
-     plain radio so the "missing key" hint reads naturally. */
+  /* One radio-row per provider. Reads as a selectable card so the
+     "API key required" tag has a home; the selected card gets an
+     accent border + soft tint via :has() below. */
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 8px;
@@ -565,6 +589,13 @@ body.tab-open .app-grid {
 
 .settings-source input[type="radio"] {
   margin-top: 3px;
+}
+
+/* The selected provider is highlighted without JS — :has() lights up
+   the card whose radio is checked. Supported in Chrome/Firefox 2024+. */
+.settings-source:has(input:checked) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .settings-source-label {
@@ -585,11 +616,15 @@ body.tab-open .app-grid {
 
 .settings-source.disabled:hover { background: transparent; }
 
-.settings-toggle {
+/* The unified option row — used for the scale-bar checkbox and each
+   smoothing radio. Same 6px vertical padding as a provider card, so
+   the bottom of any row aligns with the bottom of any card and the
+   section gap reads uniformly. */
+.settings-option {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 6px 0;
   cursor: pointer;
 }
 
@@ -600,15 +635,38 @@ body.tab-open .app-grid {
   color: #57606a;
 }
 
+/* Inline code in a hint (e.g. the env-var name) — matches the metadata
+   label <code> treatment so code reads as code everywhere. */
+.settings-hint code {
+  font-size: 10px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* A subsection nests under a section legend (e.g. Elevation smoothing
+   under Track configuration). The subheading carries an accent left
+   rule so it reads as a subordinate label, not a peer of the legend. */
+.settings-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-subheading {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1f2328;
+  padding-left: 8px;
+  border-left: 2px solid var(--color-accent);
+}
+
 .settings-smooth {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-}
-
-.settings-smooth .settings-toggle {
-  /* Radio rows sit inline; tighten the per-row padding. */
-  padding: 2px 0;
 }
 
 .settings-smooth em {

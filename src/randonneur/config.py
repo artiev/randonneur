@@ -33,13 +33,28 @@ DEFAULT_PORT: int = 8765
 # controlled source into the URL.
 TILE_URL_TEMPLATES: dict[str, str] = {
     "opentopomap": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-    # Thunderforest Outdoors is a paper-map-style layer with contours,
-    # POIs and trails. Free tier (no key) gets you 30-day stale tiles;
-    # the live tile feed needs a free API key. v1 doesn't expose
-    # Thunderforest through the UI; the entry is here so the rate-limit
-    # and URL tables are in one place when it ships.
-    "thunderforest-outdoors": "https://{s}.tile.thunderforest.com/outdoors/{z}/{x}/{y}.png"
-    + "?apikey={apikey}",
+    # OpenStreetMap Standard (mapnik) — the classic OSM basemap. Free,
+    # no key, but the OSM tile usage policy asks for ≤1 req/s/client
+    # (see TILE_RATE_LIMITS); the cache makes the practical rate ~zero
+    # after the first load.
+    "openstreetmap": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    # ESRI World Imagery — a free satellite/aerial layer, no key. Note
+    # the {z}/{y}/{x} tile-order quirk: ESRI serves rows before columns,
+    # the opposite of the OSM convention. ``_render_url`` substitutes
+    # placeholders by name, so the swapped order needs no code change —
+    # just the right template. No {s} subdomain (single host).
+    "esri-satellite": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    # Thunderforest layers — paper-map-style tiles with contours, POIs
+    # and trails. Outdoors is the hiking default; Landscape/Transport/
+    # Cycle are the other variants, all served from the same host and
+    # all behind the same free API key (RANDONNEUR_THUNDERFOREST_KEY).
+    # Without the key the source is in the whitelist but "unavailable"
+    # so the settings panel can show it as "API key required" rather
+    # than 502ing on the first pan.
+    "thunderforest-outdoors": "https://{s}.tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey={apikey}",
+    "thunderforest-landscape": "https://{s}.tile.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey={apikey}",
+    "thunderforest-transport": "https://{s}.tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey={apikey}",
+    "thunderforest-cycle": "https://{s}.tile.thunderforest.com/cycle/{z}/{x}/{y}.png?apikey={apikey}",
 }
 
 # Human-readable name for each source — used by the settings panel.
@@ -47,7 +62,12 @@ TILE_URL_TEMPLATES: dict[str, str] = {
 # mapping is in one place.
 TILE_SOURCE_LABELS: dict[str, str] = {
     "opentopomap": "OpenTopoMap",
+    "openstreetmap": "OpenStreetMap Standard",
+    "esri-satellite": "Satellite (ESRI)",
     "thunderforest-outdoors": "Thunderforest Outdoors",
+    "thunderforest-landscape": "Thunderforest Landscape",
+    "thunderforest-transport": "Thunderforest Transport",
+    "thunderforest-cycle": "Thunderforest Cycle",
 }
 
 # The default source on first launch. Listed by id, not by URL.
@@ -65,7 +85,12 @@ DEFAULT_TILE_SOURCE: str = "opentopomap"
 # Leaflet example uses.
 TILE_RATE_LIMITS: dict[str, float] = {
     "opentopomap": 1.0,
+    "openstreetmap": 1.0,
+    "esri-satellite": 2.0,
     "thunderforest-outdoors": 8.0,
+    "thunderforest-landscape": 8.0,
+    "thunderforest-transport": 8.0,
+    "thunderforest-cycle": 8.0,
 }
 
 # Env var that holds the Thunderforest API key. Optional; if unset,

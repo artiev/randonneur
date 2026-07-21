@@ -578,10 +578,10 @@ def create_app(
         # is "in the whitelist" iff its URL is in
         # TILE_URL_TEMPLATES; it's "available" iff it has no
         # environment prereqs (or they're met). The Thunderforest
-        # entry is always in the whitelist — the panel just marks
-        # it as unavailable when RANDONNEUR_THUNDERFOREST_KEY is
-        # unset, so the user sees "missing key" rather than a 502
-        # on the first map pan.
+        # layers are always in the whitelist — the panel just marks
+        # them unavailable when RANDONNEUR_THUNDERFOREST_KEY is
+        # unset, so the user sees "API key required" rather than a
+        # 502 on the first map pan.
         sources: list[TileSource] = []
         for sid in tile_cache.known_sources():
             sources.append(
@@ -589,7 +589,7 @@ def create_app(
                     id=sid,
                     name=TILE_SOURCE_LABELS.get(sid, sid),
                     available=tile_cache.is_source_available(sid),
-                    needs_key=sid == "thunderforest-outdoors",
+                    needs_key=sid.startswith("thunderforest"),
                 )
             )
         return SettingsResponse(
