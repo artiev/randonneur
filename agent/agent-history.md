@@ -716,6 +716,83 @@ integration test, since removed; the fix is guarded going
 forward by the profile-endpoint value pins and the helper unit
 tests.)
 
+### #13 — Elevation gain/loss inflated by GPS jitter: raw per-sample delta-sum counts every wobble as climbing
+
+**Symptom:** the Sunday track (`data/2026-07-19_11-09_Sun.gpx`)
+reported gain 642.8 m / loss 631.7 m, but the human's reference
+tool read ~435 m / ~424 m — a ~210 m over-count on each side.
+
+**Hypothesis:** "the gain/loss math is wrong." Try to *falsify*:
+the net (gain − loss) was +11.1 m, and the track's real net
+climb (last − first ele) is +11.1 m (939.2 → 950.3). The math
+is arithmetically correct — the *signal* it's summing is wrong.
+The track has 3007 samples, 1241 up-deltas vs 1240 down, mean
+|step| 0.42 m: nearly symmetric GPS jitter riding on top of the
+real ascent. Summing raw per-sample deltas counts every
+sub-metre wobble as climbing, inflating both gain and loss by
+the full noise amplitude while the net stays right (435 − 424 =
++11, matching). So the over-count is pure noise, evenly split.
+
+**Root cause:** no noise floor. `_elevation_gain_loss` summed
+deltas straight off the raw elevation series. GPS elevation
+jitter is sub-metre and roughly symmetric, so it accumulates
+into both totals. The profile chart's "no smoothing, keep it
+honest" philosophy (profile.py) is right for a *visual* but
+wrong for a *delta-sum*: a chart shows the noisy signal for
+inspection, a delta-sum treats every wobble as real climbing.
+
+**Fix:** smooth the elevation series with a centred moving
+average before summing, in a new `_smooth_elevations` helper
+(±10 samples ≈ ±10 s at 1 Hz ≈ ~14 m of track at hiking pace;
+prefix sums over (value, count) keep it O(n) and gap-aware —
+short dropouts are bridged by averaging neighbours, a gap
+longer than the window stays `None` and is skipped). The old
+delta-sum becomes `_sum_gain_loss` (the gap-skipping rule,
+unchanged), and `_elevation_gain_loss` is now
+`_sum_gain_loss(_smooth_elevations(eles))`. The window was
+tuned against the human's reference: ±10 gives 435.7/422.7 m
+on the Sunday track (matches ~435/424); ±5 gives 458/446,
+±15 gives 422/409. The human picked ±10.
+
+**Gotcha — short tracks:** a moving average with a window
+larger than the series flattens it to its mean (erasing real
+climbs). The 4-point `elevation_gaps` fixture (a genuine 50 m
+climb) would report 0 gain under w=21. Guard: smooth only when
+`len(eles) >= 2*half+1`; otherwise fall back to the raw
+`_sum_gain_loss`. Real hikes (1000+ samples at 1 Hz) always
+smooth; the synthetic fixture and any very short track stay
+raw. The existing 50/20 pin still holds.
+
+**Scope kept tight:** only the gain/loss stat is smoothed.
+`_elevation_min_max` (the profile range) stays raw — the
+highest/lowest point reached is an honest extreme, not a
+delta to be filtered, and smoothing would under-report the
+true max. The chart trace is untouched (still draws the raw
+0.0-substituted signal). README "Limitations" notes the split
+(chart raw, totals smoothed) so the next reader isn't
+surprised the two don't match point-for-point.
+
+**Lesson:** a delta-sum is a high-pass operation — it
+amplifies noise. "Sum every positive change" is only
+meaningful over a signal whose noise floor is below the
+features you care about, and raw GPS elevation isn't that
+signal. The fix isn't a cleverer sum; it's to low-pass the
+input first. And the net (gain − loss) is the diagnostic that
+tells you the issue is noise, not a bug: net matched the real
+start-to-end climb exactly, so the *shape* was right and only
+the *magnitude* was inflated — the signature of symmetric
+jitter. Confirmed against the real entry point: `randonneur
+serve --directory data` → `/api/folder` and
+`/api/tracks/{id}/profile` both return 435.7/422.7 for the
+Sunday track (min 911.3 / max 1183.0, raw extremes).
+
+**Verified:** `pytest tests/` 127/127 (4 new — centred-window
+averaging, short-dropout-bridges vs long-gap-skips, jitter
+reduces smoothed gain to the real ramp, short-series raw
+fallback). README re-validated with `docutils --strict`. Real
+server on the actual `data/` tracks confirms 435.7/422.7 m
+(Sunday) via both the folder summary and the profile endpoint.
+
 ## Decisions
 
 - 2026-07-17 — Created `agent/agent-history.md` as a fresh running log per the
@@ -1251,3 +1328,31 @@ tests.)
   profile-response key set. `pytest tests/` 123/123; headless
   Chrome confirmed the sidebar and profile stat lines now agree
   (gain 50, loss 20, real 2000–2050 m range).
+- 2026-07-21 — Commit 25 (`Fix`): **Smooth GPS elevation jitter
+  out of the gain/loss totals.** The Sunday track reported
+  642.8/631.7 m of gain/loss vs the human's ~435/424 m reference.
+  Root cause: `_elevation_gain_loss` summed raw per-sample deltas,
+  and GPS elevation carries sub-metre symmetric jitter (3007
+  samples: 1241 up-wobbles vs 1240 down, mean |step| 0.42 m) that
+  a delta-sum counts as climbing — inflating both totals by the
+  full noise amplitude while the net (gain − loss = +11.1 m)
+  matched the real start-to-end climb exactly. The math was
+  arithmetically right; the signal wasn't. Fix: a centred moving
+  average (`_smooth_elevations`, ±10 samples ≈ ±10 s at 1 Hz,
+  O(n) via prefix sums, gap-aware) low-passes the series before
+  `_sum_gain_loss` sums the deltas. Window tuned to the human's
+  reference (±10 → 435.7/422.7; ±5 → 458/446; ±15 → 422/409);
+  human picked ±10. Short tracks (`len < 2*half+1`) skip
+  smoothing and take the raw sum, so the 4-point `elevation_gaps`
+  fixture still pins 50/20 (a w=21 MA would flatten it to 0).
+  Scope: only the gain/loss stat is smoothed — `_elevation_min_max`
+  (the range) and the profile chart trace stay raw (honest
+  extremes / honest signal). See bug-hunt #13. Tests: 4 new
+  (centred-window averaging, short-dropout-bridges vs long-gap-
+  skips, jitter reduction recovers the real ramp, short-series
+  raw fallback); existing edge-case + fixture pins unchanged.
+  README "Limitations" notes the chart-raw / totals-smoothed
+  split, re-validated with `docutils --strict`. `pytest tests/`
+  127/127; real `randonneur serve --directory data` confirms
+  435.7/422.7 m on the Sunday track via both `/api/folder` and
+  `/api/tracks/{id}/profile`.

@@ -174,6 +174,81 @@ def test_min_max_single_real_sample() -> None:
     assert hi == pytest.approx(1234.0)
 
 
+# ─── smoothing (GPS jitter correction) ────────────────────────────────────────
+#
+# Real GPS tracks carry sub-metre elevation jitter that inflates a raw
+# delta-sum (a 3007-point hike: 643/632 m raw, 436/423 m smoothed).
+# _elevation_gain_loss smooths the series with a centred moving average
+# before summing, but only when there are enough samples to fill the
+# window — short tracks take the raw path (the 4-point fixture above
+# still pins 50/20). These tests cover the smoothing layer directly.
+
+
+def test_smooth_averages_a_window_and_is_centred() -> None:
+    # A single 100 m spike in the middle of a long flat series: the
+    # centred average spreads the spike over ±_ELEV_SMOOTH_HALF
+    # samples. Far from the spike the output is back to the flat
+    # 1000 m; at the spike it's raised toward 1100 but averaged down
+    # by its neighbours, so it never reaches the raw 1100.
+    half = gpx_loader._ELEV_SMOOTH_HALF
+    n = 1000
+    eles = [1000.0] * n
+    eles[n // 2] = 1100.0
+    out = gpx_loader._smooth_elevations(eles)
+    assert out[0] == pytest.approx(1000.0)              # outside the spike's reach
+    assert out[n // 2 + half + 1] == pytest.approx(1000.0)  # one past the window edge
+    assert out[n // 2] > 1000.0                          # spike raises its sample
+    assert out[n // 2] < 1100.0                          # ...but not to the raw value
+
+
+def test_smooth_bridges_short_dropout_but_skips_long_gap() -> None:
+    # A 3-sample None dropout is shorter than the ±10 window, so the
+    # neighbours' real elevations bleed in and the gap is interpolated
+    # (no None in the output). A 30-sample gap is longer than the
+    # window, so its middle has no real sample in range → None, which
+    # _sum_gain_loss then skips.
+    half = gpx_loader._ELEV_SMOOTH_HALF
+    short = [1000.0] + [None] * 3 + [1100.0]
+    out = gpx_loader._smooth_elevations(short)
+    assert all(o is not None for o in out)  # bridged
+    long = [1000.0] + [None] * 30 + [1000.0]
+    out_l = gpx_loader._smooth_elevations(long)
+    assert out_l[len(long) // 2] is None  # gap too wide to bridge
+    # And the gain/loss sum skips the None run (no phantom plunge).
+    assert gpx_loader._sum_gain_loss(out_l) == (0.0, 0.0)
+
+
+def test_smoothing_reduces_jitter_inflated_gain() -> None:
+    # A steady 100 m climb (0.1 m/step over 1000 samples) buried under
+    # ±1 m sinusoidal jitter. The raw delta-sum counts every up-jitter
+    # as climbing (~350 m of "gain"); the smoothed sum recovers the
+    # real ~100 m ramp. This is the whole point of the smoothing layer.
+    import math
+    n = 1000
+    eles = [0.1 * i + 1.0 * math.sin(i) for i in range(n)]
+    raw_gain, _ = gpx_loader._sum_gain_loss(eles)
+    smoothed_gain, smoothed_loss = gpx_loader._sum_gain_loss(
+        gpx_loader._smooth_elevations(eles)
+    )
+    assert raw_gain > 2 * smoothed_gain      # jitter inflated the raw sum
+    assert smoothed_gain == pytest.approx(100.0, abs=5.0)  # real ramp recovered
+    assert smoothed_loss == pytest.approx(0.0, abs=5.0)    # no real descent
+
+
+def test_short_series_takes_raw_path_not_smoothed() -> None:
+    # Fewer samples than the window (2*half+1 = 21) → no smoothing, so
+    # a short series with a real climb reports the raw gain, not the
+    # window mean (which would flatten it to ~0). Guards the rule that
+    # keeps the 4-point elevation_gaps fixture honest.
+    half = gpx_loader._ELEV_SMOOTH_HALF
+    # 5-point steady climb of 40 m, well under the 21-sample window.
+    pts = _pts(1000.0, 1010.0, 1020.0, 1030.0, 1040.0)
+    assert len(pts) < 2 * half + 1
+    gain, loss = gpx_loader._elevation_gain_loss(pts)
+    assert gain == pytest.approx(40.0)
+    assert loss == pytest.approx(0.0)
+
+
 def test_parse_multi_segment_flattens_in_order() -> None:
     track = gpx_loader.parse(FIXTURES / "multi_segment.gpx")
 
