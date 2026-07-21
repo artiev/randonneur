@@ -66,6 +66,7 @@ def test_track_summary_shape_is_stable(make_client, tmp_path: Path) -> None:
     track = body["tracks"][0]
     assert set(track.keys()) == {
         "id", "name", "color", "points", "distance_km", "elev_gain_loss_m", "bbox",
+        "subfolder",
         "metadata_name", "metadata_desc", "metadata_author",
         "track_name", "track_desc",
     }
@@ -77,6 +78,41 @@ def test_track_summary_shape_is_stable(make_client, tmp_path: Path) -> None:
     # bbox is (west, south, east, north) — assert the known values.
     west, south, east, north = track["bbox"]
     assert west < east and south < north
+    # A file directly in the served root has an empty subfolder — that's
+    # the "no group header" sentinel the TRACKS panel renders against.
+    assert track["subfolder"] == ""
+
+
+def test_folder_lists_tracks_grouped_by_subfolder(make_client, tmp_path: Path) -> None:
+    # The TRACKS panel groups by `subfolder` (parent dir relative to the
+    # served folder, "" for a root file). The backend sorts the folder by
+    # full path, so grouping is contiguous; the frontend treats it as a
+    # render-only concern on a flat array.
+    client = make_client(tmp_path)
+    (tmp_path / "root.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
+
+    tracks = client.get("/api/folder").json()["tracks"]
+    by_name = {t["name"]: t for t in tracks}
+    assert by_name["root"]["subfolder"] == ""
+    assert by_name["nested"]["subfolder"] == "sub"
+
+
+def test_folder_error_includes_relative_path(make_client, tmp_path: Path) -> None:
+    # Two same-named bad files in different subfolders used to be
+    # indistinguishable in the errors list (only f.name was shown). The
+    # error now carries the path relative to the served folder so the
+    # user can tell which one failed.
+    client = make_client(tmp_path)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "bad.gpx").write_text("not xml at all")
+
+    body = client.get("/api/folder").json()
+    assert len(body["errors"]) == 1
+    assert body["errors"][0].startswith("sub/bad.gpx:")
 
 
 # ─── Error paths ─────────────────────────────────────────────────────────────

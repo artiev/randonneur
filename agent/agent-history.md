@@ -1470,3 +1470,72 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   must discover by content, not extension, or these will never
   appear in the TRACKS panel. Committed together with the
   `.gitignore` un-ignore. `.DS_Store` stays ignored.
+- 2026-07-21 — Commit 28 (`Feat`): **List subfolders (collapsible)
+  and their GPX files in the TRACKS panel.** The dataset is now
+  organised into subfolders (`data/FR-83/…`); the flat track list no
+  longer reflected that. The panel now groups tracks by their
+  subfolder, each subfolder a collapsible group (▾/▸), in-memory
+  state (`collapsedFolders: Set<string>` — survives hot-reload
+  re-fetches, resets on full page reload; default all-expanded).
+  Discovery stays **extension-only `*.gpx`** (confirmed with the
+  human, who renamed the commit-27 files to `.gpx` — so the
+  commit-27 "must discover by content" sharp edge is resolved by
+  rename, not by a content sniff; `gpx_loader.discover()` is
+  unchanged, already recursive via `rglob("*.gpx")`). Backend:
+  `TrackSummary` gains `subfolder: str` (`""` for a file directly in
+  the served root — the "no group header" sentinel); a new
+  `_track_summary(t, folder)` helper centralises `TrackSummary`
+  construction (mirrors the existing `_elev_gain_loss_models`), used
+  by **both** `/api/folder` and the PATCH metadata response —
+  load-bearing because the frontend does `tracks[idx] = updated` on
+  a metadata save, so the PATCH response must carry `subfolder` or
+  the track drops out of its group on the next render. `subfolder` is
+  computed from the path (`parent.relative_to(folder.resolve())`,
+  `""` when `.`), never stored on `Track`. The `errors` list now
+  carries the path **relative to the served folder** (new
+  `_relname` helper) instead of bare `f.name`, so two same-named
+  bad files in different subfolders are distinguishable; the
+  root-file case still satisfies `errors[0].startswith("bad.gpx:")`.
+  Frontend: `renderTrackList()` is the only function that changes —
+  grouping is **render-only** on the flat `tracks` array (the
+  backend sorts by full path so a subfolder's tracks are already
+  contiguous; a pre-pass counts each group for the header). A
+  `<li class="track-group-header">` (same muted-uppercase tone as
+  the "TRACKS" sidebar heading; ▾/▸ marker in `::before`, flips on
+  `.collapsed`; dim per-group count) precedes each non-root group's
+  rows; the **root group renders with no header**. Grouped track
+  `<li>`s get an `in-group` indent (24px vs 12px); rows in a
+  collapsed group get `hidden = true`. `selectTrack(id)` now
+  auto-expands the selected track's group (`collapsedFolders.delete
+  (subfolder)`) before re-rendering, so a selection made from the
+  map (whose group may be collapsed) keeps its highlight visible.
+  Every other flat-array consumer (`drawAllTracks`, `refreshStats`,
+  `renderEditView`, `renderMetadataEditor`, `saveMetadata`,
+  `refreshFolder`) is **unchanged** — all id-keyed, nesting-agnostic;
+  `li[data-track-id]` matches rows anywhere in the nested DOM. No
+  `index.html` structural change (headers generated into the
+  existing `#track-list`); no watcher change (already recursive);
+  no `TrackDetail`/`TrackProfile` change. Same commit also stages
+  the working-tree `.gpx` renames (the two commit-27 Bargème files
+  renamed to add `.gpx`) **and** a third track added to the dataset,
+  `data/FR-83/Brenon (short trip).gpx` (a route around Brenon, also
+  FR-83) — so the served folder now has three tracks, all under
+  `FR-83`. Tests: 2 new server (`test_folder_lists_tracks_grouped_
+  by_subfolder`, `test_folder_error_includes_relative_path`) +
+  `test_track_summary_shape_is_stable` gains `subfolder` + a root→
+  `""` assertion; 1 new loader (`test_discover_ignores_extensionless
+  _gpx_content` — pins the extension-only contract so a future
+  content-sniff is a deliberate test update, not silent drift). The
+  existing `test_folder_with_one_bad_file_*` pin
+  (`errors[0].startswith("bad.gpx:")`) still holds — a root file's
+  `_relname` is its bare name. `pytest tests/` 135/135; a temporary
+  headless-Chrome drive against the real `data/` (appended to
+  `test_headless.py`, then reverted pre-commit per the established
+  workflow) confirmed: the FR-83 group header renders with a ▾
+  marker and all three tracks under it; collapse hides the rows and
+  flips the marker to ▸; expand restores them; selecting a track
+  from a collapsed group auto-expands it; `document.body.scrollHeight
+  <= window.innerHeight` (no layout regression from the indented
+  grouped rows). IIFE-wrapped every multi-use `const` in the
+  `Runtime.evaluate` expressions (the commit-26 CDP
+  redeclaration gotcha).

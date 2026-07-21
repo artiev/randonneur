@@ -54,6 +54,16 @@ def test_discover_ignores_non_gpx_files(tmp_path: Path) -> None:
     assert [p.name for p in gpx_loader.discover(tmp_path)] == ["track.gpx"]
 
 
+def test_discover_ignores_extensionless_gpx_content(tmp_path: Path) -> None:
+    # Discovery is extension-only: a file whose *contents* are a valid GPX
+    # document but which has no .gpx extension is NOT discovered. This
+    # pins the chosen contract (no content-sniffing) so a future switch
+    # to sniffing is a deliberate test update, not silent drift.
+    (tmp_path / "a_real_track").write_bytes((FIXTURES / "elevation_gaps.gpx").read_bytes())
+    (tmp_path / "track.gpx").write_bytes((FIXTURES / "multi_segment.gpx").read_bytes())
+    assert [p.name for p in gpx_loader.discover(tmp_path)] == ["track.gpx"]
+
+
 # ─── parse ───────────────────────────────────────────────────────────────────
 
 

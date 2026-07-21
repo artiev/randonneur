@@ -131,6 +131,11 @@ class TrackSummary(BaseModel):
     distance_km: float
     elev_gain_loss_m: list[ElevGainLoss]
     bbox: tuple[float, float, float, float] = Field(description="(west, south, east, north)")
+    # The track's parent directory relative to the served folder, "" for a
+    # file directly in the root. Drives the TRACKS panel's subfolder grouping
+    # (see _track_summary). Computed from the path, never stored on Track, so
+    # it can't drift from the actual location on disk.
+    subfolder: str = ""
     metadata_name: str | None = None
     metadata_desc: str | None = None
     metadata_author: str | None = None
@@ -290,6 +295,67 @@ def _elev_gain_loss_models(t: gpx_loader.Track) -> list[ElevGainLoss]:
     ]
 
 
+def _subfolder_of(path: Path, folder: Path) -> str:
+    """The track's parent dir relative to the served folder, "" at root.
+
+    Used for the TRACKS panel's subfolder grouping. ``path`` is the
+    Track's resolved absolute path; ``folder`` is the served folder. Both
+    are resolved so a symlink in the folder's own path doesn't make
+    ``relative_to`` raise. A file directly in the folder yields
+    ``Path(".")`` → "". Defensive try/except → "" so a resolve edge case
+    never 500s the whole listing (the file always comes from
+    ``discover(folder)`` so this branch is unreachable in practice, but
+    the listing is the wrong place to crash).
+    """
+    try:
+        rel = path.parent.relative_to(folder.resolve())
+    except ValueError:
+        return ""
+    return "" if rel == Path(".") else str(rel)
+
+
+def _relname(path: Path, folder: Path) -> str:
+    """A file's path relative to the served folder, for error messages.
+
+    ``bad.gpx`` at the root → ``"bad.gpx"``; a bad file at
+    ``sub/bad.gpx`` → ``"sub/bad.gpx"``. Falls back to ``path.name`` if
+    the file isn't under ``folder`` (same defensive shape as
+    :func:`_subfolder_of`). Disambiguates two same-named files in
+    different subfolders in the parse-errors list.
+    """
+    try:
+        return str(path.relative_to(folder.resolve()))
+    except ValueError:
+        return path.name
+
+
+def _track_summary(t: gpx_loader.Track, folder: Path) -> TrackSummary:
+    """Build a TrackSummary from a parsed Track + the served folder.
+
+    Centralised so the folder list and the PATCH response construct the
+    same shape from the same inputs — including ``subfolder`` (computed
+    from the path here, never stored on ``Track``). The PATCH response
+    replaces ``tracks[idx]`` in the client, so it must carry ``subfolder``
+    too or a metadata save drops the track out of its group on the next
+    render. Sibling of :func:`_elev_gain_loss_models`.
+    """
+    return TrackSummary(
+        id=t.id,
+        name=t.name,
+        color=t.color,
+        points=len(t.points),
+        distance_km=round(t.distance_km, 3),
+        elev_gain_loss_m=_elev_gain_loss_models(t),
+        bbox=t.bbox,
+        subfolder=_subfolder_of(t.path, folder),
+        metadata_name=t.metadata_name,
+        metadata_desc=t.metadata_desc,
+        metadata_author=t.metadata_author,
+        track_name=t.track_name,
+        track_desc=t.track_desc,
+    )
+
+
 class _NoCacheStaticFiles(StaticFiles):
     """StaticFiles that forces the browser to revalidate on every load.
 
@@ -400,29 +466,17 @@ def create_app(
                 t = gpx_loader.parse(f)
             except gpxpy.gpx.GPXException as e:
                 # Per-file failure: log and surface, but keep going so
-                # one bad file doesn't blank the whole folder.
-                errors.append(f"{f.name}: {e.__class__.__name__}: {e}")
+                # one bad file doesn't blank the whole folder. Use the
+                # path relative to the served folder (not just f.name)
+                # so two same-named files in different subfolders are
+                # distinguishable in the errors list.
+                errors.append(f"{_relname(f, folder)}: {e.__class__.__name__}: {e}")
                 continue
             except OSError as e:
-                errors.append(f"{f.name}: {e.__class__.__name__}: {e}")
+                errors.append(f"{_relname(f, folder)}: {e.__class__.__name__}: {e}")
                 continue
             cache[t.id] = t
-            tracks.append(
-                TrackSummary(
-                    id=t.id,
-                    name=t.name,
-                    color=t.color,
-                    points=len(t.points),
-                    distance_km=round(t.distance_km, 3),
-                    elev_gain_loss_m=_elev_gain_loss_models(t),
-                    bbox=t.bbox,
-                    metadata_name=t.metadata_name,
-                    metadata_desc=t.metadata_desc,
-                    metadata_author=t.metadata_author,
-                    track_name=t.track_name,
-                    track_desc=t.track_desc,
-                )
-            )
+            tracks.append(_track_summary(t, folder))
         _log.info("Folder %s: %d track(s), %d error(s)", folder, len(tracks), len(errors))
         # The folder is already set on the watcher at startup (via
         # ``create_app`` / the lifespan), so this is a no-op when the
@@ -512,20 +566,10 @@ def create_app(
             # bypass the validator.
             raise HTTPException(status_code=422, detail=str(e))
         _state_for(app).track_cache[track_id] = updated
-        return TrackSummary(
-            id=updated.id,
-            name=updated.name,
-            color=updated.color,
-            points=len(updated.points),
-            distance_km=round(updated.distance_km, 3),
-            elev_gain_loss_m=_elev_gain_loss_models(updated),
-            bbox=updated.bbox,
-            metadata_name=updated.metadata_name,
-            metadata_desc=updated.metadata_desc,
-            metadata_author=updated.metadata_author,
-            track_name=updated.track_name,
-            track_desc=updated.track_desc,
-        )
+        # Reuse _track_summary so the PATCH response carries subfolder too —
+        # the client replaces tracks[idx] with this object, and a missing
+        # subfolder would drop the track out of its group on the next render.
+        return _track_summary(updated, _state_for(app).active_folder)
 
     @app.get("/api/settings", response_model=SettingsResponse)
     def api_settings() -> SettingsResponse:

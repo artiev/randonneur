@@ -20,6 +20,11 @@
   let tracks = [];
   /** @type {string|null} id of the currently focused track */
   let selectedTrackId = null;
+  /** @type {Set<string>} collapsed subfolder keys in the TRACKS panel.
+   * In-memory only: survives hot-reload re-fetches (refreshFolder doesn't
+   * touch it) but resets on a full page reload. A key present means the
+   * group's track rows are hidden; absent means expanded (the default). */
+  let collapsedFolders = new Set();
   /** @type {string|null} currently loaded folder path (from /api/folder) */
   let currentFolder = null;
   /** @type {Map<string, object>} id → fetched track detail (with polyline) */
@@ -154,27 +159,77 @@
       trackList.appendChild(li);
       return;
     }
+    // Group tracks by subfolder. The backend sorts the folder list by
+    // full path, so tracks in the same subfolder are already contiguous —
+    // emit a collapsible group header when the subfolder changes. Root
+    // tracks (subfolder "") list with no header. The `tracks` array stays
+    // flat (this is a render-only grouping) so every other spot that does
+    // tracks.find()/.some()/.map() by id keeps working unchanged.
+    const groupCounts = new Map();
     for (const t of tracks) {
-      const li = document.createElement("li");
-      li.dataset.trackId = t.id;
-      if (t.id === selectedTrackId) li.classList.add("selected");
-
-      const swatch = document.createElement("span");
-      swatch.className = "swatch";
-      swatch.style.background = t.color;
-
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = t.name;
-
-      const stats = document.createElement("span");
-      stats.className = "stats";
-      stats.textContent = formatStats(t);
-
-      li.append(swatch, name, stats);
-      li.addEventListener("click", () => selectTrack(t.id));
-      trackList.appendChild(li);
+      groupCounts.set(t.subfolder, (groupCounts.get(t.subfolder) || 0) + 1);
     }
+    let currentGroup = null;
+    for (const t of tracks) {
+      if (t.subfolder !== currentGroup) {
+        currentGroup = t.subfolder;
+        if (t.subfolder) {
+          trackList.appendChild(makeGroupHeader(t.subfolder, groupCounts.get(t.subfolder)));
+        }
+      }
+      trackList.appendChild(makeTrackRow(t));
+    }
+  }
+
+  function makeGroupHeader(subfolder, count) {
+    const li = document.createElement("li");
+    li.className = "track-group-header";
+    li.dataset.folder = subfolder;
+    if (collapsedFolders.has(subfolder)) li.classList.add("collapsed");
+    const label = document.createElement("span");
+    label.className = "track-group-label";
+    label.textContent = subfolder;
+    const n = document.createElement("span");
+    n.className = "track-group-count";
+    n.textContent = `(${count})`;
+    li.append(label, n);
+    // Clicking the header toggles the group's collapse state and
+    // re-renders. State lives in the module-level `collapsedFolders`
+    // set, which survives hot-reload re-fetches but resets on a full
+    // page reload.
+    li.addEventListener("click", () => {
+      if (collapsedFolders.has(subfolder)) collapsedFolders.delete(subfolder);
+      else collapsedFolders.add(subfolder);
+      renderTrackList();
+    });
+    return li;
+  }
+
+  function makeTrackRow(t) {
+    const li = document.createElement("li");
+    li.dataset.trackId = t.id;
+    if (t.id === selectedTrackId) li.classList.add("selected");
+    if (t.subfolder) li.classList.add("in-group");
+    // Hide the row when its group is collapsed. `hidden` (display:none)
+    // keeps refreshStats' li[data-track-id] selector from touching visible
+    // rows only — updating a hidden row's .stats is harmless.
+    if (t.subfolder && collapsedFolders.has(t.subfolder)) li.hidden = true;
+
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    swatch.style.background = t.color;
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = t.name;
+
+    const stats = document.createElement("span");
+    stats.className = "stats";
+    stats.textContent = formatStats(t);
+
+    li.append(swatch, name, stats);
+    li.addEventListener("click", () => selectTrack(t.id));
+    return li;
   }
 
   function renderErrors(errors) {
@@ -453,6 +508,11 @@
       if (trackId !== id) clearMapCrosshair(trackId);
     }
     selectedTrackId = id;
+    // A selection can arrive from the map (or a collapsed group's row,
+    // via keyboard) even when its group is collapsed. Auto-expand the
+    // selected track's group so the selection highlight stays visible.
+    const sel = tracks.find((t) => t.id === id);
+    if (sel && sel.subfolder) collapsedFolders.delete(sel.subfolder);
     renderTrackList();
     restyleSelection();
     if (id && polylines.has(id)) {
