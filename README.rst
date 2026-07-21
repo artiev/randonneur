@@ -304,14 +304,18 @@ Limitations and known sharp edges
   Easy to add a moving average later if you want one.
 - **Elevation gain/loss is jitter-corrected, the chart isn't.** The
   total-ascent / total-descent figures (sidebar + profile stat line)
-  are computed from a centred moving average of the elevation series
-  (±10 samples ≈ ±10 s at 1 Hz), not from raw per-sample deltas. GPS
-  elevation carries sub-metre jitter that a raw delta-sum counts as
-  climbing — a 3007-point hike reads 643/632 m raw vs 436/423 m
-  smoothed. The chart still draws the raw signal (so you can see the
-  noise); only the two totals are smoothed. Tracks shorter than the
-  smoothing window fall back to the raw sum. The min–max range is
-  always the real extremes, never smoothed.
+  are computed from a centred moving average of the elevation series,
+  not from raw per-sample deltas. GPS elevation carries sub-metre
+  jitter that a raw delta-sum counts as climbing — a 3007-point hike
+  reads 643/632 m raw vs 436/423 m smoothed. The smoothing window is
+  ±N *samples* (5/10/15, default 10, set in the Settings tab), so its
+  physical meaning depends on the track's sampling rate: ±10 samples
+  is ±50 s at a 5 s cadence but ±10 s at 1 Hz. The profile stat line
+  shows the track's median sampling interval (e.g. ``5s/pt``) so you
+  can pick the right N for the rate. The chart still draws the raw
+  signal (so you can see the noise); only the two totals are smoothed.
+  Tracks shorter than the smoothing window fall back to the raw sum.
+  The min–max range is always the real extremes, never smoothed.
 - **In-memory track cache.** ``/api/tracks/{id}`` is populated as
   the folder is listed and shared with ``/api/tracks/{id}/profile``
   so a click doesn't re-parse. The cache is reset on every folder

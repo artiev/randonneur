@@ -541,6 +541,30 @@ body.tab-open .app-grid {
   cursor: pointer;
 }
 
+.settings-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #57606a;
+}
+
+.settings-smooth {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.settings-smooth .settings-toggle {
+  /* Radio rows sit inline; tighten the per-row padding. */
+  padding: 2px 0;
+}
+
+.settings-smooth em {
+  font-style: normal;
+  color: #57606a;
+  font-size: 11px;
+}
+
 /* Metadata editor. Lives in the Edit view of the right-side tab and
    populates when a track is selected. Two text inputs and three
    textareas, each with a 1000-char cap matching the server-side

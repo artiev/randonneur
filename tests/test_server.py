@@ -65,10 +65,12 @@ def test_track_summary_shape_is_stable(make_client, tmp_path: Path) -> None:
     body = client.get("/api/folder").json()
     track = body["tracks"][0]
     assert set(track.keys()) == {
-        "id", "name", "color", "points", "distance_km", "elev_gain_m", "elev_loss_m", "bbox",
+        "id", "name", "color", "points", "distance_km", "elev_gain_loss_m", "bbox",
         "metadata_name", "metadata_desc", "metadata_author",
         "track_name", "track_desc",
     }
+    # One gain/loss pair per selectable smoothing window (5/10/15).
+    assert [e["half"] for e in track["elev_gain_loss_m"]] == [5, 10, 15]
     assert isinstance(track["id"], str) and len(track["id"]) == 12
     assert track["color"].startswith("#")
     assert track["points"] == 5  # multi_segment has 5 points
@@ -161,6 +163,22 @@ def test_static_serves_index_html_and_assets() -> None:
     assert "text/css" in css.headers["content-type"]
     assert "app-grid" in css.text  # the layout class
     assert ".side-panel" in css.text  # the right-side tab (Settings/Edit)
+
+
+def test_static_assets_force_revalidation() -> None:
+    # Static assets carry Cache-Control: no-cache so the browser always
+    # revalidates (conditional GET → 304 unchanged / 200 changed) instead
+    # of serving a stale app.js from heuristic cache. The elevation
+    # gain/loss reshape (scalar → per-window list) silently broke stale
+    # browsers that read the old field name against the new JSON and
+    # rendered NaN; this header prevents that class of bug.
+    from randonneur.server import static_files_dir
+    client = TestClient(create_app(static_dir=static_files_dir()))
+
+    js = client.get("/app.js")
+    assert js.headers.get("cache-control") == "no-cache"
+    index = client.get("/")
+    assert index.headers.get("cache-control") == "no-cache"
 
 
 def test_static_serves_favicon() -> None:
@@ -293,7 +311,7 @@ def test_index_contains_required_dom_ids() -> None:
                 # happens" in the browser.
                 "tab-button-settings", "tab-button-edit",
                 "side-panel", "side-panel-close", "side-panel-title",
-                "settings-sources", "settings-scale",
+                "settings-sources", "settings-scale", "settings-smooth",
                 # Metadata editor, in the Edit view. Same rationale: a
                 # rename without updating app.js breaks the editor
                 # silently in the browser.
@@ -318,7 +336,7 @@ def test_track_detail_returns_full_polyline(make_client, tmp_path: Path) -> None
 
     detail = client.get(f"/api/tracks/{track_id}").json()
     assert set(detail.keys()) == {
-        "id", "name", "color", "distance_km", "elev_gain_m", "elev_loss_m", "bbox", "points",
+        "id", "name", "color", "distance_km", "elev_gain_loss_m", "bbox", "points",
         "metadata_name", "metadata_desc", "metadata_author",
         "track_name", "track_desc",
     }
@@ -404,8 +422,10 @@ def test_profile_returns_aligned_arrays(make_client, tmp_path: Path) -> None:
     body = client.get(f"/api/tracks/{track_id}/profile").json()
     assert set(body.keys()) == {
         "id", "name", "color", "distances_km", "elevations_m",
-        "elev_gain_m", "elev_loss_m", "elev_min_m", "elev_max_m",
+        "elev_gain_loss_m", "elev_min_m", "elev_max_m", "sample_interval_s",
     }
+    # multi_segment has no <time> stamps → the rate is null, not 0.
+    assert body["sample_interval_s"] is None
     # multi_segment has 5 points → arrays must be 5 long and aligned.
     assert len(body["distances_km"]) == 5
     assert len(body["elevations_m"]) == 5
@@ -437,11 +457,17 @@ def test_profile_substitutes_zero_for_missing_elevation(
     # 0.0 substitute. Elevations are 2000, None, 2050, 2030 → gain 50,
     # loss 20, min 2000, max 2050. A client-side recompute over
     # elevations_m would give gain 2050 / loss 2020 / min 0 — this
-    # pin guards against that regression.
-    assert body["elev_gain_m"] == pytest.approx(50.0)
-    assert body["elev_loss_m"] == pytest.approx(20.0)
+    # pin guards against that regression. 4 points < every smoothing
+    # window, so all three windows report the raw 50/20.
+    by_half = {e["half"]: e for e in body["elev_gain_loss_m"]}
+    assert [e["half"] for e in body["elev_gain_loss_m"]] == [5, 10, 15]
+    for half in (5, 10, 15):
+        assert by_half[half]["gain_m"] == pytest.approx(50.0)
+        assert by_half[half]["loss_m"] == pytest.approx(20.0)
     assert body["elev_min_m"] == pytest.approx(2000.0)
     assert body["elev_max_m"] == pytest.approx(2050.0)
+    # No <time> stamps → rate is null.
+    assert body["sample_interval_s"] is None
 
 
 def test_profile_404_for_unknown_id(client: TestClient) -> None:

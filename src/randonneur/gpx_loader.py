@@ -14,6 +14,7 @@ caller (the server) needs to see the failure per file so the UI can show
 from __future__ import annotations
 
 import hashlib
+import statistics
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,8 +55,18 @@ class Track:
     points: tuple[Point, ...]
     bbox: tuple[float, float, float, float]  # (west, south, east, north)
     distance_km: float
-    elev_gain_m: float  # sum of positive elevation deltas only
-    elev_loss_m: float  # sum of negative elevation deltas, as a positive magnitude
+    # Elevation gain/loss precomputed for each selectable smoothing
+    # half-window (see _ELEV_SMOOTH_WINDOWS) so the UI can switch the
+    # window without a re-parse. ``{half: (gain_m, loss_m)}``; loss is
+    # a positive magnitude. See _elevation_gain_loss / _smooth_elevations.
+    elev_gain_loss: dict[int, tuple[float, float]]
+    # Median inter-point time interval in seconds (rounded), or None
+    # when the track has no <time> stamps. Shown in the profile stat
+    # line so the user can judge what a ±N-sample smoothing window
+    # means in real time at this track's sampling rate (±10 samples
+    # is ±50 s at a 5 s cadence but ±10 s at 1 Hz — the window in
+    # samples is rate-dependent, which is why it's configurable).
+    sample_interval_s: int | None = None
     # GPX metadata (from <metadata>). The first <trk>'s <name>/<desc>
     # are exposed as track_name/track_desc; multi-track files would
     # need an extra API call to enumerate, but every fixture in this
@@ -99,19 +110,30 @@ def _track_color(track_id: str) -> str:
     return _PALETTE[int(track_id[:4], 16) % len(_PALETTE)]
 
 
-def _flatten_points(gpx: gpxpy.gpx.GPX) -> list[Point]:
-    """Flatten tracks → segments → points into a single ordered list.
+def _raw_points(gpx: gpxpy.gpx.GPX) -> list:
+    """All gpxpy points across all tracks/segments, in file order.
 
-    Multi-track and multi-segment files are concatenated in the order
-    gpxpy yields them. gpxpy already returns points in the order they
-    appear in the file, which matches the order a GPS recorded them.
+    Kept as the raw gpxpy point objects (not :class:`Point`) so the
+    caller still has ``p.time`` for the sampling-rate estimate. parse()
+    maps these to :class:`Point` for the polyline.
     """
-    out: list[Point] = []
-    for track in gpx.tracks:
-        for segment in track.segments:
-            for p in segment.points:
-                out.append(Point(lat=p.latitude, lon=p.longitude, ele=p.elevation))
-    return out
+    return [p for trk in gpx.tracks for seg in trk.segments for p in seg.points]
+
+
+def _median_sample_interval_s(raw: list) -> int | None:
+    """Median inter-point interval in seconds, rounded; None if untimed.
+
+    Median (not mean) so a long pause — a lunch break, a signal gap —
+    doesn't skew the typical cadence. Rounded to the second because
+    sub-second precision is meaningless for a "how often does this
+    track sample" read. Returns None when fewer than two points carry
+    a ``<time>`` stamp (the synthetic fixtures have none).
+    """
+    times = [p.time for p in raw if p.time is not None]
+    if len(times) < 2:
+        return None
+    gaps = [(times[i] - times[i - 1]).total_seconds() for i in range(1, len(times))]
+    return round(statistics.median(gaps))
 
 
 def _bbox(points: list[Point]) -> tuple[float, float, float, float]:
@@ -129,53 +151,49 @@ def _bbox(points: list[Point]) -> tuple[float, float, float, float]:
     return (west, south, east, north)
 
 
-def _elevation_gain_loss(points: list[Point]) -> tuple[float, float]:
+# The smoothing half-windows the UI offers (in samples, ±this many
+# points). The window is in *samples*, not seconds, so its physical
+# meaning depends on the track's sampling rate — which is why the
+# profile stat line shows the rate and the setting is configurable.
+# 10 is the default (matches reference tools on the project's own
+# 5 s-cadence hikes: 643/632 m raw → 436/423 m); 5 is lighter
+# (preserves shorter features), 15 heavier (clips more jitter).
+_ELEV_SMOOTH_WINDOWS: tuple[int, ...] = (5, 10, 15)
+_ELEV_SMOOTH_DEFAULT = 10
+# Kept under the legacy name for the existing tests that read it.
+_ELEV_SMOOTH_HALF = _ELEV_SMOOTH_DEFAULT
+
+
+def _elevation_gain_loss(points: list[Point], half: int = _ELEV_SMOOTH_DEFAULT) -> tuple[float, float]:
     """Total ascent and descent in metres, GPS-jitter-corrected.
 
     Returns ``(gain, loss)`` where gain is total ascent and loss is
     total descent as a *positive* magnitude. The elevation series is
-    first smoothed with a centred moving average (see
-    :func:`_smooth_elevations`) so sub-metre GPS jitter isn't summed as
-    climbing, then :func:`_sum_gain_loss` sums the deltas with the
-    gap-skipping rule. Smoothing is applied only when the series has
-    enough samples to fill the window — a track shorter than the
-    window would be flattened to its mean (erasing real climbs), so
-    short tracks fall back to the raw delta sum.
+    first smoothed with a centred moving average of half-window
+    ``half`` (see :func:`_smooth_elevations`) so sub-metre GPS jitter
+    isn't summed as climbing, then :func:`_sum_gain_loss` sums the
+    deltas with the gap-skipping rule. Smoothing is applied only when
+    the series has enough samples to fill the window — a track shorter
+    than the window would be flattened to its mean (erasing real
+    climbs), so short tracks fall back to the raw delta sum.
     """
     eles = [p.ele for p in points]
-    if len(eles) >= 2 * _ELEV_SMOOTH_HALF + 1:
-        eles = _smooth_elevations(eles)
+    if len(eles) >= 2 * half + 1:
+        eles = _smooth_elevations(eles, half)
     return _sum_gain_loss(eles)
 
 
-# Half-window for the centred moving average applied to the elevation
-# series before summing gain/loss. GPS elevation samples carry sub-
-# metre jitter — measured on the project's own 3007-point Sunday hike
-# as 1241 up-wobbles vs 1240 down, mean |step| 0.42 m — and summing
-# raw per-sample deltas counts every wobble as climbing, inflating
-# both gain and loss by the full noise amplitude while the net
-# (gain − loss) stays correct. A ±10-sample centred average (≈ ±10 s
-# at 1 Hz ≈ ~14 m of track at hiking pace) kills the jitter and
-# recovers the real climbed/descended metres: that hike goes from
-# 643/632 m raw to 436/423 m smoothed, matching reference tools. The
-# profile *chart* stays raw (profile.compute_profile keeps the honest
-# signal for visual inspection); only this stat is smoothed, because
-# a delta-sum over noisy samples is numerically meaningless.
-_ELEV_SMOOTH_HALF = 10
-
-
-def _smooth_elevations(eles: list[float | None]) -> list[float | None]:
+def _smooth_elevations(eles: list[float | None], half: int = _ELEV_SMOOTH_DEFAULT) -> list[float | None]:
     """Centred moving average of an elevation series, gap-aware.
 
     Each output sample is the mean of the real (non-``None``)
-    elevations within ±``_ELEV_SMOOTH_HALF`` indices of it; a window
-    with no real samples (a dropout longer than the window) carries
-    ``None`` through so :func:`_sum_gain_loss` still skips the gap.
-    Short dropouts are bridged by averaging the surrounding reals.
-    Prefix sums over (value, count) keep it O(n).
+    elevations within ±``half`` indices of it; a window with no real
+    samples (a dropout longer than the window) carries ``None`` through
+    so :func:`_sum_gain_loss` still skips the gap. Short dropouts are
+    bridged by averaging the surrounding reals. Prefix sums over
+    (value, count) keep it O(n).
     """
     n = len(eles)
-    half = _ELEV_SMOOTH_HALF
     pref_val = [0.0] * (n + 1)
     pref_cnt = [0] * (n + 1)
     for i, e in enumerate(eles):
@@ -261,9 +279,14 @@ def parse(path: Path) -> Track:
     # parsing the path string as XML. Use an open() handle.
     with open(path, "rb") as f:
         gpx = gpxpy.parse(f)
-    points = _flatten_points(gpx)
+    raw = _raw_points(gpx)
+    points = tuple(Point(lat=p.latitude, lon=p.longitude, ele=p.elevation) for p in raw)
     track_id = _track_id(path)
-    elev_gain, elev_loss = _elevation_gain_loss(points)
+    # Precompute gain/loss for every selectable smoothing window so
+    # the UI can switch windows without a re-parse (one source of
+    # truth, all math backend-side).
+    elev_gain_loss = {h: _elevation_gain_loss(points, h) for h in _ELEV_SMOOTH_WINDOWS}
+    sample_interval_s = _median_sample_interval_s(raw)
     # GPX display metadata. We grab the first <trk> only — multi-track
     # files are rare in practice (and the loader already flattens
     # across them), so "first trk wins" is the obvious rule. None vs
@@ -275,8 +298,8 @@ def parse(path: Path) -> Track:
         name=path.stem,
         path=path.resolve(),
         color=_track_color(track_id),
-        points=tuple(points),
-        bbox=_bbox(points),
+        points=points,
+        bbox=_bbox(list(points)),
         # gpxpy.length_3d sums 3D segment length — close enough to the
         # haversine distance for a folder-list summary. The profile
         # endpoint recomputes distance with its own haversine
@@ -284,8 +307,8 @@ def parse(path: Path) -> Track:
         # point array; the two numbers can differ by a fraction of a
         # percent and that's fine.
         distance_km=gpx.length_3d() / 1000.0,
-        elev_gain_m=elev_gain,
-        elev_loss_m=elev_loss,
+        elev_gain_loss=elev_gain_loss,
+        sample_interval_s=sample_interval_s,
         metadata_name=gpx.name or None,
         metadata_desc=gpx.description or None,
         metadata_author=gpx.author_name or None,

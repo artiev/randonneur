@@ -98,6 +98,22 @@ class Point(BaseModel):
     ele: float | None
 
 
+class ElevGainLoss(BaseModel):
+    """Elevation gain/loss for one smoothing half-window.
+
+    The UI offers a fixed set of windows (5/10/15 samples); gain/loss
+    is precomputed for each at parse time and shipped as a list so
+    switching the smoothing setting updates every stat line instantly
+    with no refetch. ``half`` is in samples (±this many points); the
+    physical meaning depends on the track's sampling rate, which is
+    why :class:`TrackProfile` also ships ``sample_interval_s``.
+    """
+
+    half: int = Field(description="Smoothing half-window in samples (±this many points).")
+    gain_m: float
+    loss_m: float
+
+
 class TrackSummary(BaseModel):
     """Lightweight track record returned to the UI's folder list.
 
@@ -113,8 +129,7 @@ class TrackSummary(BaseModel):
     color: str
     points: int
     distance_km: float
-    elev_gain_m: float
-    elev_loss_m: float
+    elev_gain_loss_m: list[ElevGainLoss]
     bbox: tuple[float, float, float, float] = Field(description="(west, south, east, north)")
     metadata_name: str | None = None
     metadata_desc: str | None = None
@@ -130,8 +145,7 @@ class TrackDetail(BaseModel):
     name: str
     color: str
     distance_km: float
-    elev_gain_m: float
-    elev_loss_m: float
+    elev_gain_loss_m: list[ElevGainLoss]
     bbox: tuple[float, float, float, float]
     points: list[Point]
     metadata_name: str | None = None
@@ -159,16 +173,19 @@ class TrackProfile(BaseModel):
     # Plotly and the hover-sync, so recomputing these client-side from
     # elevations_m would count a dropout as a ~2000 m plunge. Ship the
     # server's numbers and let the UI display them directly — one source
-    # of truth, matching the sidebar stat line exactly.
-    elev_gain_m: float = Field(description="Total ascent in metres (gaps skipped).")
-    elev_loss_m: float = Field(
-        description="Total descent in metres as a positive magnitude (gaps skipped)."
-    )
+    # of truth, matching the sidebar stat line exactly. Gain/loss ships
+    # for every smoothing window so the UI can switch without a refetch.
+    elev_gain_loss_m: list[ElevGainLoss]
     elev_min_m: float | None = Field(
         description="Lowest real elevation in metres, or null if no point has one."
     )
     elev_max_m: float | None = Field(
         description="Highest real elevation in metres, or null if no point has one."
+    )
+    sample_interval_s: int | None = Field(
+        description="Median inter-point sampling interval in seconds (rounded), "
+        "or null if the track has no <time> stamps. Shown in the stat line "
+        "so the ±N-sample smoothing window can be read in real time."
     )
 
 
@@ -257,6 +274,51 @@ def _get_cached(app: FastAPI, track_id: str) -> gpx_loader.Track:
         # restarted since the folder was loaded. The UI handles this by
         # re-listing the folder.
         raise HTTPException(status_code=404, detail=f"unknown track: {track_id}")
+
+
+def _elev_gain_loss_models(t: gpx_loader.Track) -> list[ElevGainLoss]:
+    """Build the wire-shape gain/loss list for a Track, one per window.
+
+    Centralised so the folder list, track detail, profile, and PATCH
+    response all round and order the windows identically. The dict on
+    the Track is keyed by half; emit in ascending half order so the UI
+    can index predictably if it ever wants to.
+    """
+    return [
+        ElevGainLoss(half=h, gain_m=round(g, 1), loss_m=round(l, 1))
+        for h, (g, l) in sorted(t.elev_gain_loss.items())
+    ]
+
+
+class _NoCacheStaticFiles(StaticFiles):
+    """StaticFiles that forces the browser to revalidate on every load.
+
+    Starlette's StaticFiles sends ``Last-Modified`` and ``ETag`` but no
+    ``Cache-Control``, so a browser falls back to *heuristic* caching —
+    it may serve a stale ``app.js`` straight from its disk cache without
+    revalidating, for an unpredictable window based on the file's age.
+    That bit us when the elevation gain/loss was reshaped from two
+    scalars (``elev_gain_m`` / ``elev_loss_m``) to a per-window list
+    (``elev_gain_loss_m``): a browser that still had the old ``app.js``
+    cached ran it against the new JSON, read the now-missing
+    ``elev_gain_m`` as ``undefined``, and rendered ``↑ NaN m · ↓ NaN m``
+    in every stat line. A hard refresh cleared it, but the class of bug
+    (stale JS, fresh API) is silent and recurring.
+
+    ``Cache-Control: no-cache`` doesn't mean "don't cache" — it means
+    "revalidate before using". The browser sends
+    ``If-Modified-Since`` / ``If-None-Match``; StaticFiles returns 304
+    when the file is unchanged (sub-millisecond, no body) or 200 with
+    the new bytes when it has changed. So a local dev viewer always
+    runs the current static assets without paying a full re-download on
+    every request. The tile endpoint (``/api/tiles/...``) is a separate
+    route, not this mount, so tiles keep their own disk-cache path.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[override]
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
 
 
 # ─── App factory ──────────────────────────────────────────────────────────────
@@ -352,8 +414,7 @@ def create_app(
                     color=t.color,
                     points=len(t.points),
                     distance_km=round(t.distance_km, 3),
-                    elev_gain_m=round(t.elev_gain_m, 1),
-                    elev_loss_m=round(t.elev_loss_m, 1),
+                    elev_gain_loss_m=_elev_gain_loss_models(t),
                     bbox=t.bbox,
                     metadata_name=t.metadata_name,
                     metadata_desc=t.metadata_desc,
@@ -378,8 +439,7 @@ def create_app(
             name=t.name,
             color=t.color,
             distance_km=round(t.distance_km, 3),
-            elev_gain_m=round(t.elev_gain_m, 1),
-            elev_loss_m=round(t.elev_loss_m, 1),
+            elev_gain_loss_m=_elev_gain_loss_models(t),
             bbox=t.bbox,
             # Sending the full point list over the wire is fine for v1
             # — typical GPX files are a few hundred points; 10,000+ is
@@ -412,10 +472,10 @@ def create_app(
             color=t.color,
             distances_km=distances_km,
             elevations_m=elevations_m,
-            elev_gain_m=t.elev_gain_m,
-            elev_loss_m=t.elev_loss_m,
+            elev_gain_loss_m=_elev_gain_loss_models(t),
             elev_min_m=elev_min,
             elev_max_m=elev_max,
+            sample_interval_s=t.sample_interval_s,
         )
 
     @app.patch("/api/tracks/{track_id}/metadata", response_model=TrackSummary)
@@ -458,8 +518,7 @@ def create_app(
             color=updated.color,
             points=len(updated.points),
             distance_km=round(updated.distance_km, 3),
-            elev_gain_m=round(updated.elev_gain_m, 1),
-            elev_loss_m=round(updated.elev_loss_m, 1),
+            elev_gain_loss_m=_elev_gain_loss_models(updated),
             bbox=updated.bbox,
             metadata_name=updated.metadata_name,
             metadata_desc=updated.metadata_desc,
@@ -569,7 +628,14 @@ def create_app(
 
     if static_dir is not None and static_dir.is_dir():
         # Mount at root; FastAPI's StaticFiles handles missing-file 404s.
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+        # Served through _NoCacheStaticFiles so the browser always
+        # revalidates static assets (see that class for the NaN bug this
+        # prevents).
+        app.mount(
+            "/",
+            _NoCacheStaticFiles(directory=str(static_dir), html=True),
+            name="static",
+        )
 
     return app
 

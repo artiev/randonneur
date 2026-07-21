@@ -73,9 +73,65 @@ def test_parse_elev_gain_and_loss_skips_gap() -> None:
     # Elevations: 2000, None, 2050, 2030.
     # Gain: 2050-2000 = 50 (the None gap is skipped, not counted as ascent).
     # Loss: 2030-2050 = -20 → 20 m of descent (a positive magnitude).
+    # 4 points < every smoothing window → raw path → all windows agree.
     track = gpx_loader.parse(FIXTURES / "elevation_gaps.gpx")
-    assert track.elev_gain_m == pytest.approx(50.0)
-    assert track.elev_loss_m == pytest.approx(20.0)
+    for half in (5, 10, 15):
+        gain, loss = track.elev_gain_loss[half]
+        assert gain == pytest.approx(50.0)
+        assert loss == pytest.approx(20.0)
+
+
+def test_parse_precomputes_gain_loss_for_each_window() -> None:
+    # The UI offers 5/10/15; parse must precompute all three so the
+    # setting can switch without a re-parse.
+    track = gpx_loader.parse(FIXTURES / "elevation_gaps.gpx")
+    assert set(track.elev_gain_loss.keys()) == set(gpx_loader._ELEV_SMOOTH_WINDOWS)
+
+
+def test_elevation_gain_loss_window_param_changes_result() -> None:
+    # A long noisy series (1000-point 100 m ramp + ±1 m sine jitter):
+    # a heavier window smooths more, so less jitter is counted as gain.
+    # The default half (10) matches the explicit half=10 call.
+    import math
+    n = 1000
+    pts = [
+        gpx_loader.Point(lat=0.0, lon=float(i), ele=0.1 * i + 1.0 * math.sin(i))
+        for i in range(n)
+    ]
+    g5 = gpx_loader._elevation_gain_loss(pts, half=5)[0]
+    g10 = gpx_loader._elevation_gain_loss(pts, half=10)[0]
+    g15 = gpx_loader._elevation_gain_loss(pts, half=15)[0]
+    assert g5 > g10 > g15  # heavier smoothing → smaller counted gain
+    assert g10 == pytest.approx(gpx_loader._elevation_gain_loss(pts)[0])
+
+
+def test_parse_sample_interval_s_from_timestamps(tmp_path: Path) -> None:
+    # 5 points at 0, 5, 10, 20, 25 s — gaps 5, 5, 10, 5; median = 5 s.
+    # The 10 s outlier (a pause) must not skew the median cadence.
+    p = tmp_path / "timed.gpx"
+    p.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">\n'
+        '  <trk><trkseg>\n'
+        '    <trkpt lat="46.5" lon="11.4"><ele>1000</ele>'
+        '<time>2026-07-19T11:09:00Z</time></trkpt>\n'
+        '    <trkpt lat="46.5" lon="11.4"><ele>1000</ele>'
+        '<time>2026-07-19T11:09:05Z</time></trkpt>\n'
+        '    <trkpt lat="46.5" lon="11.4"><ele>1000</ele>'
+        '<time>2026-07-19T11:09:10Z</time></trkpt>\n'
+        '    <trkpt lat="46.5" lon="11.4"><ele>1000</ele>'
+        '<time>2026-07-19T11:09:20Z</time></trkpt>\n'
+        '    <trkpt lat="46.5" lon="11.4"><ele>1000</ele>'
+        '<time>2026-07-19T11:09:25Z</time></trkpt>\n'
+        '  </trkseg></trk>\n'
+        '</gpx>\n'
+    )
+    assert gpx_loader.parse(p).sample_interval_s == 5
+
+
+def test_parse_sample_interval_s_none_when_untimed() -> None:
+    # The synthetic fixtures have no <time>; the rate is unknown, not 0.
+    assert gpx_loader.parse(FIXTURES / "elevation_gaps.gpx").sample_interval_s is None
 
 
 # ─── _elevation_gain_loss / _elevation_min_max edge cases ─────────────────────

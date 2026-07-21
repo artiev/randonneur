@@ -1356,3 +1356,95 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   127/127; real `randonneur serve --directory data` confirms
   435.7/422.7 m on the Sunday track via both `/api/folder` and
   `/api/tracks/{id}/profile`.
+- 2026-07-21 — Commit 26 (`Feat`): **Configurable elevation
+  smoothing window (Settings tab) + sampling-rate display.** The
+  ±10 window from commit 25 is rate-dependent in *physical*
+  terms: ±10 samples is ±50 s at a 5 s cadence but ±10 s at 1 Hz,
+  and the human mixes sampling rates between tracks. So the
+  window is now a setting, and the track's sampling rate is shown
+  so the right N is pickable. Backend: `gpx_loader.Track` replaces
+  the single `elev_gain_m`/`elev_loss_m` pair with
+  `elev_gain_loss: dict[int, tuple[float, float]]` precomputed at
+  parse time for every window in `_ELEV_SMOOTH_WINDOWS = (5, 10,
+  15)` (default 10) — one source of truth, all three windows
+  shipped, so the client toggles instantly with no refetch.
+  `_elevation_gain_loss` / `_smooth_elevations` take a `half`
+  param; `_ELEV_SMOOTH_HALF` kept as a legacy alias for the
+  existing tests' default-arg. New `sample_interval_s` is the
+  **median** (not mean — robust to pauses/dropouts) inter-point
+  interval, rounded to the second, `None` when the track is
+  untimed; `_raw_points(gpx)` (renamed from `_flatten_points`)
+  returns the raw gpxpy points so `p.time` is available.
+  Server: a new `ElevGainLoss` model (`half`/`gain_m`/`loss_m`);
+  `TrackSummary` / `TrackDetail` / `TrackProfile` carry
+  `elev_gain_loss_m: list[ElevGainLoss]` (sorted by half) instead
+  of the two scalars; `TrackProfile` also carries
+  `sample_interval_s`. A `_elev_gain_loss_models(t)` helper is
+  the single construction site used by all four response paths.
+  Frontend: a third fieldset in the Settings tab ("Elevation
+  smoothing") with three radios ±5 / ±10 / ±15 (±10 checked by
+  default); `smoothHalf` state; `pickGainLoss(glList)` selects
+  the window matching `smoothHalf` (falling back to 10, then the
+  first); `refreshStats()` re-renders every sidebar stat line +
+  the selected track's profile stat from the already-shipped
+  per-window list — no refetch, no chart redraw. The profile
+  stat line appends `· {sample_interval_s}s/pt` when the track is
+  timed (e.g. `5s/pt` for the Sunday track). README
+  "Limitations" rewritten: window is ±N *samples* (5/10/15,
+  default 10, set in Settings), rate-dependent, profile stat
+  line shows the median interval so you can pick N for the rate,
+  chart stays raw, short tracks fall back to raw, min/max always
+  real extremes — and corrects the prior wrong "≈ ±10 s at 1 Hz"
+  claim (the real tracks are 5 s cadence).
+  *Stale-cache fix (same commit, amended in):* the scalar→list
+  reshape of the gain/loss field silently broke browsers that had
+  the pre-commit app.js heuristically cached — the old JS read the
+  now-missing `elev_gain_m` as `undefined` against the new JSON and
+  rendered `↑ NaN m · ↓ NaN m` in every stat line (a hard refresh
+  cleared it, but "stale JS, fresh API" is a silent, recurring
+  class). Root cause: Starlette's `StaticFiles` sends `ETag` /
+  `Last-Modified` but no `Cache-Control`, so browsers fall back to
+  heuristic caching and may serve a stale `app.js` without
+  revalidating for an unpredictable window. Fix: a small
+  `_NoCacheStaticFiles(StaticFiles)` subclass overrides
+  `get_response` to add `Cache-Control: no-cache` — "revalidate
+  before using", not "don't cache", so the browser sends a
+  conditional GET and StaticFiles returns 304 (unchanged,
+  sub-millisecond, no body) or 200 (changed, new bytes). Verified
+  on the wire: `app.js` and `/` both carry `cache-control: no-cache`
+  alongside the existing ETag/Last-Modified, and an `If-None-Match`
+  re-request returns 304. The tile endpoint is a separate route,
+  not this mount, so tiles keep their own disk-cache path. New
+  `test_static_assets_force_revalidation` pins the header on both
+  `/app.js` and `/`. The code itself was never wrong — a fresh
+  headless-Chrome load (no cache) rendered both tracks' stat lines
+  and the Plotly chart with zero NaN before the fix; the fix is what
+  stops a *returning* browser from seeing the NaN.
+  *Gotcha (test harness, not product):* while verifying the ±15
+  toggle with a temporary headless-Chrome test, the second
+  `pick(half)` call silently no-op'd — the radio never checked.
+  Root cause: CDP `Runtime.evaluate` runs each eval in the
+  *same* global lexical environment, so a top-level `const r`
+  persists across evals and the second `const r = ...` throws a
+  silent `SyntaxError: Identifier 'r' has already been declared`
+  (the script fails to parse, `Runtime.evaluate` returns
+  `undefined`, no Python exception). `pick(5)` worked only
+  because it was the *first* declaration. Fix: wrap the eval body
+  in an IIFE so `const r` is function-scoped. The product was
+  never affected — the default (10) and ±5 toggled correctly and
+  the numbers matched the backend precompute exactly (436/423 @10,
+  458/446 @5); the ±15 toggle verified once the IIFE scoping was
+  in. Lesson for future headless tests: never use a top-level
+  `const`/`let` in a `Runtime.evaluate` expression you'll issue
+  more than once — wrap in an IIFE, or the second call dies
+  silently and the assertion failure looks like a product bug.
+  Tests: 4 new — precompute-for-each-window, window-param
+  changes the result (synthetic 1000-pt ramp: gain@5 > @10 > @15,
+  default == half=10), `sample_interval_s` from timestamps
+  (median=5 with a 10 s outlier), `None` when untimed; 6 updated
+  for the new `elev_gain_loss_m` list + `sample_interval_s` keys
+  and the `settings-smooth` DOM-ID pin. `pytest tests/` 131/131;
+  headless Chrome on the real `data/` Sunday track confirmed all
+  three windows (±10 → 436/423 with `5s/pt`, ±5 → 458/446, ±15 →
+  422/409) and the revert-to-10, both sidebar and profile.
+  README re-validated with `docutils --strict`.

@@ -42,6 +42,11 @@
   let scaleControl = null;
   /** @type {boolean} whether the scale bar is on. */
   let showScaleBar = true;
+  /** @type {number} elevation smoothing half-window in samples (5/10/15).
+   *  Gain/loss is precomputed for each on the server and shipped as a
+   *  list; this picks which one the stat lines display. In-memory only
+   *  (matches the other settings — no localStorage). */
+  let smoothHalf = 10;
 
   // ─── DOM refs (resolved once on load) ────────────────────────────────────
 
@@ -62,6 +67,7 @@
   const sidePanelTitle = document.getElementById("side-panel-title");
   const settingsSources = document.getElementById("settings-sources");
   const settingsScale = document.getElementById("settings-scale");
+  const settingsSmooth = document.getElementById("settings-smooth");
   // Metadata editor. The editor lives in the Edit view of the right-side
   // tab; the fieldset is shown by renderMetadataEditor (when a track is
   // selected) and hidden by clearMetadataEditor when the selection clears.
@@ -580,21 +586,57 @@
 
   function formatProfileStats(data) {
     const total = data.distances_km[data.distances_km.length - 1] || 0;
-    // Gain/loss/min/max come straight from the server — they're
-    // gap-aware (a GPS dropout's missing <ele> is skipped, not treated
-    // as 0). The elevations_m array still carries 0.0 for gaps so it
-    // stays index-aligned with distances_km for Plotly and the hover-
-    // sync, which means recomputing these client-side would count a
-    // dropout as a ~2000 m plunge and a bogus 0 m minimum. Read the
-    // server's numbers instead so the profile stat line matches the
-    // sidebar exactly (one source of truth).
-    const gain = Math.round(data.elev_gain_m);
-    const loss = Math.round(data.elev_loss_m);
+    // Gain/loss come straight from the server — gap-aware (a GPS
+    // dropout's missing <ele> is skipped, not treated as 0) and
+    // precomputed for each smoothing window. pickGainLoss selects the
+    // active window so changing the setting updates this line without
+    // a refetch. The elevations_m array still carries 0.0 for gaps
+    // (index-aligned for Plotly + the hover-sync), so these must not
+    // be recomputed client-side from it. min/max are raw extremes.
+    const gl = pickGainLoss(data.elev_gain_loss_m);
+    const gain = Math.round(gl.gain_m);
+    const loss = Math.round(gl.loss_m);
     const range =
       data.elev_min_m == null || data.elev_max_m == null
         ? "—"
         : `${Math.round(data.elev_min_m)}–${Math.round(data.elev_max_m)} m`;
-    return `${total.toFixed(2)} km · ↑ ${gain} m · ↓ ${loss} m · ${range}`;
+    // The sampling rate lets the user read the ±N-sample window in
+    // real time (±10 samples at 5 s/pt = ±50 s). Omitted when the
+    // track has no <time> stamps.
+    const rate = data.sample_interval_s == null
+      ? ""
+      : ` · ${data.sample_interval_s}s/pt`;
+    return `${total.toFixed(2)} km · ↑ ${gain} m · ↓ ${loss} m · ${range}${rate}`;
+  }
+
+  // Pick the gain/loss pair for the active smoothing window from the
+  // server-shipped list, falling back to the default (10) then the
+  // first available — robust if the server's window set ever differs
+  // from the radio set in the HTML.
+  function pickGainLoss(glList) {
+    if (!glList || !glList.length) return { gain_m: 0, loss_m: 0 };
+    return (
+      glList.find((x) => x.half === smoothHalf) ||
+      glList.find((x) => x.half === 10) ||
+      glList[0]
+    );
+  }
+
+  // Re-render every stat line for the active smoothing window from the
+  // already-shipped per-window gain/loss — no refetch. Called when the
+  // smoothing radio changes.
+  function refreshStats() {
+    for (const li of trackList.querySelectorAll("li[data-track-id]")) {
+      const t = tracks.find((x) => x.id === li.dataset.trackId);
+      if (t) {
+        const stats = li.querySelector(".stats");
+        if (stats) stats.textContent = formatStats(t);
+      }
+    }
+    if (selectedTrackId) {
+      const data = profileData.get(selectedTrackId);
+      if (data) profileStats.textContent = formatProfileStats(data);
+    }
   }
 
   function hexToRgba(hex, alpha) {
@@ -713,6 +755,17 @@
   settingsScale.addEventListener("change", () => {
     setScaleBar(settingsScale.checked);
   });
+  if (settingsSmooth) {
+    settingsSmooth.addEventListener("change", (ev) => {
+      if (ev.target.name === "elev-smooth") {
+        smoothHalf = Number(ev.target.value);
+        // Re-render every stat line from the already-shipped per-window
+        // gain/loss — no refetch. The sidebar list and the selected
+        // track's profile stat both update instantly.
+        refreshStats();
+      }
+    });
+  }
   // Escape closes the tab — standard affordance for a dialog.
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && isTabOpen()) {
@@ -1007,9 +1060,12 @@
     const km = `${t.distance_km.toFixed(1)} km`;
     // Elevation is always shown in metres — the old ≥1000→km branch was
     // a copy-paste from the distance formatter (elevation gain in km is
-    // nonsensical). Gain and loss are separate stats now, both in metres.
-    const gain = `${Math.round(t.elev_gain_m)} m`;
-    const loss = `${Math.round(t.elev_loss_m)} m`;
+    // nonsensical). Gain and loss are separate stats now, both in
+    // metres; pickGainLoss selects the active smoothing window's pair
+    // from the server-shipped list.
+    const gl = pickGainLoss(t.elev_gain_loss_m);
+    const gain = `${Math.round(gl.gain_m)} m`;
+    const loss = `${Math.round(gl.loss_m)} m`;
     return `${km} · ↑${gain} · ↓${loss}`;
   }
 
