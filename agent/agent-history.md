@@ -1539,3 +1539,22 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   grouped rows). IIFE-wrapped every multi-use `const` in the
   `Runtime.evaluate` expressions (the commit-26 CDP
   redeclaration gotcha).
+- 2026-07-21 — Commit 29 (`Feat`): **Click an already-selected
+  track's row to deselect it.** The panel row click was a plain
+  `selectTrack(t.id)` — clicking the highlighted track again was a
+  no-op (it just re-set the same id). Now the row click toggles:
+  `selectTrack(t.id === selectedTrackId ? null : t.id)`. `selectTrack
+  (null)` already had a clean deselect path (clears all map
+  crosshairs, drops `selectedTrackId`, clears the profile, hides the
+  profile crosshair), so no new "clear" function was needed. Scope:
+  the toggle is in the **panel row click handler only** — map-polyline
+  clicks and the watcher's hot-reload re-selection still call
+  `selectTrack(id)` as a plain set, so a re-click on the map or a
+  post-reload restore doesn't unexpectedly drop the selection.
+  `selectTrack`'s auto-expand guard (`if (sel && sel.subfolder)`) is
+  naturally skipped on `null` (no track matches), so deselecting
+  leaves the group's collapsed/expanded state alone. `pytest tests/`
+  135/135; a temporary headless-Chrome drive against `data/`
+  (appended to `test_headless.py`, then reverted pre-commit)
+  confirmed first click selects, second click on the same row
+  deselects.

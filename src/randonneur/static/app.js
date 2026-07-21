@@ -228,7 +228,13 @@
     stats.textContent = formatStats(t);
 
     li.append(swatch, name, stats);
-    li.addEventListener("click", () => selectTrack(t.id));
+    // Clicking the already-selected track deselects it (toggle).
+    // Scoped to the panel row — map-driven selection stays a plain
+    // "set" so a hot-reload re-selection or a re-click on the map
+    // polyline doesn't unexpectedly drop the selection.
+    li.addEventListener("click", () => {
+      selectTrack(t.id === selectedTrackId ? null : t.id);
+    });
     return li;
   }
 
