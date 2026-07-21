@@ -1567,3 +1567,16 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   GPX track is its own `Data:` commit — data additions are kept
   separate from code so a track import doesn't ride along on a
   feature/fix commit and clutter its diff.
+- 2026-07-21 — Commit 31 (`Doc`): **Two new git-style rules in
+  `agent-behaviour.md` §6.** (1) Each new GPX track / dataset file is
+  its own `Data:` commit, kept separate from code so a track import
+  doesn't ride along on a `Feat:`/`Fix:` commit and clutter its diff;
+  `Data:` joins the type-prefix list (`Feat:`, `Fix:`, `Refactor:`,
+  `Doc:`, `Chore:`). First applied in commit 30 above. (2) A
+  **one-liner** commit message (subject only, no body) ends with a `.`
+  to mark the end of the message — the period signals "no body
+  follows", so a `git log --oneline` reader knows the subject is the
+  whole message. Multi-line commit subjects keep the standard
+  Conventional-Commits no-trailing-period. Both rules are
+  project-specific (randonneur) and marked as such in the file. The
+  file's `photogravy` worked-example flavour is otherwise left as-is.

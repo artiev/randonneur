@@ -165,12 +165,28 @@
 - **Branches:** `feature/<short-slug>` for feature work; branch off the
   default branch (here `main`) before committing there.
 - **Commits are atomic and Conventional-Commits-flavoured:**
-  - Type prefix, capitalized: `Feat:`, `Fix:`, `Refactor:`, `Doc:`, `Chore:`.
-  - Subject in the **imperative mood**, no trailing period.
+  - Type prefix, capitalized: `Feat:`, `Fix:`, `Refactor:`, `Doc:`,
+    `Chore:`, and `Data:` (see the data-track rule below).
+  - Subject in the **imperative mood**. A multi-line commit's subject
+    has **no trailing period** (standard Conventional-Commits); a
+    **one-liner** message (subject only, no body) **ends with a `.`**
+    to mark the end of the message — the period signals "there is no
+    body", so a reader skimming `git log --oneline` knows the subject
+    is the whole message.
   - Examples from this rework:
     `Feat: Flatten the TUI into a Home menu with full-width panels.`
     `Fix: Persist config editor field edits (InquirerPy deep-copies Choice values).`
     `Refactor: Demote exif to a core prerequisite and rework common config.`
+- **Each new GPX track (or other dataset file) is its own `Data:`
+  commit, separate from code.** A track import must not ride along on
+  a `Feat:`/`Fix:` commit — it would clutter that commit's diff and
+  mix a data addition with a code change. Stage just the data file
+  (+ its `agent-history.md` entry) and commit as
+  `Data: <one-line description>.` (a one-liner, so it ends with a
+  period per the rule above). Multiple new tracks in one go are still
+  one `Data:` commit only if they belong together (e.g. a batch
+  import); otherwise one track per `Data:` commit. *(randonneur
+  project rule — the dataset lives in-repo under `data/`.)*
 - **Body explains *why*, not *what*.** What happened is in the diff; the
   body carries the root cause, the constraint, and the reasoning. For a
   bug-fix commit, lead the body with the root cause.
