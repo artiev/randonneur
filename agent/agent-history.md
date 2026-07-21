@@ -1594,3 +1594,54 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   the human says so. §6's branches bullet now cross-references §2
   instead of mandating a branch. Self-applied: this commit itself was
   preceded by exactly that ask (human chose "commit on main").
+
+- 2026-07-21 — Commit 33 (`Refactor`): **Rework the Settings panel —
+  consistent spacing, harmonized controls, section hints, and
+  tile-source diversification.** On `feature/settings-panel-rework`
+  (asked-for branch, per §2). The Settings view is reorganized into
+  three `<fieldset class="settings-group">` sections in order:
+  **Map provider**, **Map configuration**, **Track configuration**,
+  each with a uniform `<p class="settings-hint">`; **Elevation
+  smoothing** becomes a subsection under Track configuration (accent
+  left-rule `.settings-subheading`). The real spacing bug was that
+  the flex `gap` lived on `.settings-body`, but the fieldsets are
+  children of `.tab-view`, so the inter-section gap never applied —
+  moved it to `.tab-view[data-view="settings"]:not([hidden]) { gap:
+  18px }` (the `:not([hidden])` keeps it from beating the `[hidden]`
+  UA rule). Controls harmonized: every radio/checkbox now uses
+  `accent-color: var(--color-accent)`; the row primitive is renamed
+  `.settings-toggle → .settings-option` with one 6px vertical metric;
+  provider cards (kept as bordered cards, spruced with a
+  `:has(input:checked)` selected state) normalize to the same 6px so
+  a card bottom aligns with a plain-row bottom. The Map provider
+  section is genuinely diversified — `TILE_URL_TEMPLATES` /
+  `TILE_SOURCE_LABELS` / `TILE_RATE_LIMITS` grow from 2 to 7 sources
+  in display order: opentopomap, openstreetmap (free, no key),
+  esri-satellite (free, ESRI World Imagery, `{z}/{y}/{x}` order — no
+  code change because `_render_url` substitutes by name), then the
+  Thunderforest family outdoors/landscape/transport/cycle (all behind
+  the existing `RANDONNEUR_THUNDERFOREST_KEY`). The key gate in
+  `is_source_available` and `needs_key` in `/api/settings` are
+  generalized from `== "thunderforest-outdoors"` to
+  `startswith("thunderforest")`; `SettingsResponse` shape is
+  unchanged. The dynamic per-card unavailable hint shortens to "API
+  key required"; the full "set the env var" explanation lives once in
+  the Map provider section hint. Tests: `test_settings_*` and
+  `test_is_source_available_*` extended to the full set + a
+  `thunderforest-landscape` variant; new
+  `test_settings_free_sources_always_available`,
+  `test_render_url_esri_uses_zyx_order`,
+  `test_render_url_openstreetmap_substitutes_subdomain`,
+  `test_is_source_available_thunderforest_variants_require_key`. A
+  temporary headless-Chrome drive against `data/` (appended to
+  `test_headless.py`, then reverted pre-commit) confirmed 7 provider
+  cards in order with OpenTopoMap selected, 4 Thunderforest cards
+  greyed with the "API key required" tag, uniform 18px inter-section
+  gaps, the Elevation smoothing subsection, OSM + ESRI rendering real
+  tiles (`.leaflet-tile-loaded`), the ±15 smoothing stat change with
+  no NaN, and the scale-bar toggle. (The first tile assertion used a
+  wrong selector — `.leaflet-tile img` (descendant) is always 0
+  because the img *is* `.leaflet-tile`; corrected to
+  `.leaflet-tile-loaded`.) 140 tests green. Settings stay in-memory
+  only ("viewer, not a configurator"); the Edit view is untouched.
+  The branch merges to `main` only when asked.

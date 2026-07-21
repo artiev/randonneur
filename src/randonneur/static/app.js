@@ -734,8 +734,11 @@
   }
 
   function renderSettingsPanel() {
-    // One radio row per source. Disabled rows show a hint about
-    // what's missing (e.g. "needs RANDONNEUR_THUNDERFOREST_KEY").
+    // One radio card per source. A source that needs a key it doesn't
+    // have is shown disabled with a short "API key required" tag; the
+    // full explanation lives in the Map provider section hint. The
+    // selected card is highlighted via CSS (:has(input:checked)), so
+    // no JS class toggle is needed here.
     settingsSources.innerHTML = "";
     for (const src of tileSources) {
       const id = `src-${src.id}`;
@@ -760,9 +763,12 @@
       name.textContent = src.name;
       text.appendChild(name);
       if (!src.available && src.needs_key) {
+        // Short tag on the card; the full "set the env var on the
+        // server" explanation lives once in the Map provider section
+        // hint, so it isn't repeated on each greyed Thunderforest card.
         const hint = document.createElement("span");
         hint.className = "settings-source-hint";
-        hint.textContent = "Set RANDONNEUR_THUNDERFOREST_KEY on the server";
+        hint.textContent = "API key required";
         text.appendChild(hint);
       }
       label.append(radio, text);

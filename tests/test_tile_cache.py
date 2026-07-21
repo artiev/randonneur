@@ -135,6 +135,34 @@ def test_is_source_available_unknown_source_false() -> None:
     assert tile_cache.is_source_available("bogus-source") is False
 
 
+def test_is_source_available_free_sources_always_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # OpenStreetMap Standard and ESRI Satellite need no key — available
+    # regardless of env. Pins the no-key contract for the free sources
+    # added alongside the Thunderforest variants.
+    monkeypatch.delenv("RANDONNEUR_THUNDERFOREST_KEY", raising=False)
+    assert tile_cache.is_source_available("openstreetmap") is True
+    assert tile_cache.is_source_available("esri-satellite") is True
+
+
+def test_is_source_available_thunderforest_variants_require_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The key gate is generalized to ``source.startswith("thunderforest")``,
+    # so every variant (landscape/transport/cycle) follows the same rule
+    # as outdoors — unavailable without the key, available with it.
+    variants = ("thunderforest-landscape", "thunderforest-transport",
+                "thunderforest-cycle")
+    monkeypatch.delenv("RANDONNEUR_THUNDERFOREST_KEY", raising=False)
+    for v in variants:
+        assert v in set(tile_cache.known_sources())
+        assert tile_cache.is_source_available(v) is False
+    monkeypatch.setenv("RANDONNEUR_THUNDERFOREST_KEY", "test-key-abc")
+    for v in variants:
+        assert tile_cache.is_source_available(v) is True
+
+
 def test_render_url_substitutes_apikey_when_template_needs_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -155,6 +183,26 @@ def test_render_url_works_without_apikey_when_template_doesnt_need_it() -> None:
     url = tile_cache._render_url("opentopomap", 5, 16, 11)
     assert "{apikey}" not in url
     assert "5/16/11.png" in url
+
+
+def test_render_url_esri_uses_zyx_order() -> None:
+    # ESRI World Imagery serves tiles as {z}/{y}/{x} (rows before
+    # columns), the opposite of the OSM {z}/{x}/{y} convention. The
+    # template is written with the swapped placeholder order and
+    # _render_url substitutes by name, so the rendered URL must carry
+    # y before x. Pins the quirk so a future "normalize to zxy" change
+    # is a deliberate test update, not silent drift.
+    url = tile_cache._render_url("esri-satellite", 5, 16, 11)
+    assert "/5/11/16" in url  # z=5, y=11, x=16
+    assert "{z}" not in url and "{y}" not in url and "{x}" not in url
+
+
+def test_render_url_openstreetmap_substitutes_subdomain() -> None:
+    # OpenStreetMap Standard uses the {s} a/b/c subdomain like
+    # OpenTopoMap; _render_url must fill it (and leave no placeholders).
+    url = tile_cache._render_url("openstreetmap", 5, 16, 11)
+    assert url.startswith("https://") and ".tile.openstreetmap.org/" in url
+    assert "{s}" not in url and "5/16/11.png" in url
 
 
 @pytest.mark.asyncio

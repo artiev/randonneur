@@ -78,14 +78,16 @@ def tile_path(source: str, z: int, x: int, y: int) -> Path:
 def is_source_available(source: str) -> bool:
     """Whether a source can be fetched right now.
 
-    OpenTopoMap has no prereqs. Thunderforest needs an API key in the
-    environment; without one, the source is in the whitelist but
-    unavailable, so the settings panel can show it as "missing key"
-    rather than 502ing on the first map pan.
+    OpenTopoMap, OpenStreetMap Standard and ESRI Satellite have no
+    prereqs. The Thunderforest layers (outdoors, landscape, transport,
+    cycle) all need an API key in the environment; without one the
+    source is in the whitelist but unavailable, so the settings panel
+    can show it as "API key required" rather than 502ing on the first
+    map pan.
     """
     if source not in TILE_URL_TEMPLATES:
         return False
-    if source == "thunderforest-outdoors":
+    if source.startswith("thunderforest"):
         return thunderforest_api_key() is not None
     return True
 
