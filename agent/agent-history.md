@@ -1443,8 +1443,30 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   default == half=10), `sample_interval_s` from timestamps
   (median=5 with a 10 s outlier), `None` when untimed; 6 updated
   for the new `elev_gain_loss_m` list + `sample_interval_s` keys
-  and the `settings-smooth` DOM-ID pin. `pytest tests/` 131/131;
+  and the `settings-smooth` DOM-ID pin, + the
+  `test_static_assets_force_revalidation` cache-control pin (part
+  of the stale-cache fix above). `pytest tests/` 132/132;
   headless Chrome on the real `data/` Sunday track confirmed all
   three windows (±10 → 436/423 with `5s/pt`, ±5 → 458/446, ±15 →
-  422/409) and the revert-to-10, both sidebar and profile.
-  README re-validated with `docutils --strict`.
+  422/409) and the revert-to-10, both sidebar and profile, with
+  zero NaN in the stat lines and the Plotly trace. README
+  re-validated with `docutils --strict`.
+- 2026-07-21 — **Reversed: `data/` is tracked again.** The user
+  cleared the `data/` folder and will now actively maintain the
+  GPX dataset inside the git repo, so the prior 2026-07-21
+  `.gitignore` rule (`data/`) is removed. The original reason for
+  ignoring — the metadata editor's gpxpy re-save producing noisy
+  `data/*.gpx` diffs — is accepted as a cost of in-repo data going
+  forward. No README / test / behaviour-file reference to the old
+  ignore rule existed, so the only edit is `.gitignore` itself.
+- 2026-07-21 — Commit 27 (`Chore`): **Track the GPX dataset
+  in-repo.** First tracked dataset under `data/FR-83/`: two
+  routes around Bargème (Var, FR-83) — `Bargème (long trip)`
+  (11.4 km) and `Bargème (short trip)` (9.6 km), both exported
+  from onthegomap.com. **Sharp edge:** these files have **no
+  `.gpx` extension** (onthegomap names them after the route, not
+  `*.gpx`), so the current `discover()` (`*.gpx` glob) does not
+  find them yet — the subfolder-listing feature (next commit)
+  must discover by content, not extension, or these will never
+  appear in the TRACKS panel. Committed together with the
+  `.gitignore` un-ignore. `.DS_Store` stays ignored.

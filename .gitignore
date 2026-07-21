@@ -30,6 +30,4 @@ htmlcov/
 # ─── randonneur local ────────────────────────────────────────────────────────
 # Tile cache lives outside the repo under ~/.cache/randonneur — not gitignored here.
 
-# Real GPX tracks live in data/ — the user's own data, not part of the project.
-# Ignored so metadata edits / re-saves never leak into a commit.
-data/
+# data/ is tracked: real GPX tracks are maintained in-repo as the dataset.
