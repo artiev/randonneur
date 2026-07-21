@@ -1580,3 +1580,17 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   Conventional-Commits no-trailing-period. Both rules are
   project-specific (randonneur) and marked as such in the file. The
   file's `photogravy` worked-example flavour is otherwise left as-is.
+- 2026-07-21 — Commit 32 (`Doc`): **Ask whether a feature branch is
+  required, instead of auto-branching.** The prior §2 rule ("If on
+  the default branch and a commit is requested, branch first") and
+  the matching §6 bullet ("branch off the default branch before
+  committing there") silently branched on every requested commit,
+  which fought this session's actual workflow — every commit so far
+  landed directly on `main` at the human's request, so the
+  auto-branch was being bypassed in practice. Replaced with an
+  **ask-first** rule: when a commit is requested while on the default
+  branch, the agent asks (once, up front) whether a feature branch is
+  required for the changes, then commits to the default branch only if
+  the human says so. §6's branches bullet now cross-references §2
+  instead of mandating a branch. Self-applied: this commit itself was
+  preceded by exactly that ask (human chose "commit on main").

@@ -64,8 +64,12 @@
   captured PID for cleanup). If unsure who started it, don't kill it — ask.
   This is a hard rule that cannot be broken without specific, case-by-case
   user agreement; bulk "just clean it up" permission does not extend here.
-- **Never commit or push unless asked.** If on the default branch and a
-  commit *is* requested, branch first. End commit messages with the trailer
+- **Never commit or push unless asked.** When a commit *is* requested and
+  you are on the default branch, **ask the human whether a feature branch
+  is required** for the changes before doing anything — don't auto-branch,
+  and don't commit to the default branch without that confirmation. Apply
+  the rule once per request, up front; a single "branch or commit on
+  `<branch>`?" covers the whole batch. End commit messages with the trailer
   below.
 - **Report faithfully.** Tests failed? Show the output. Skipped a step? Say
   so. Done and verified? State it plainly. Don't hedge done work, don't hide
@@ -162,8 +166,10 @@
 
 ## 6. Git style
 
-- **Branches:** `feature/<short-slug>` for feature work; branch off the
-  default branch (here `main`) before committing there.
+- **Branches:** `feature/<short-slug>` for feature work. When a commit is
+  requested while on the default branch, **ask whether a feature branch is
+  required** for the changes (see §2); commit directly to the default branch
+  only if the human says so.
 - **Commits are atomic and Conventional-Commits-flavoured:**
   - Type prefix, capitalized: `Feat:`, `Fix:`, `Refactor:`, `Doc:`,
     `Chore:`, and `Data:` (see the data-track rule below).
