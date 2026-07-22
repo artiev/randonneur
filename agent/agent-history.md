@@ -1679,3 +1679,22 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   button alongside ⚙. RST validates strict (`docutils --strict`)
   and `tests/test_docs.py` (5) + the full suite (140) are green.
   No code change.
+
+- 2026-07-22 — Commit 35 (`Doc`): **Every commit subject ends with
+  a `.`, one-liner or multi-line alike.** Replaces the prior §6
+  rule (one-liners end with `.`; multi-line subjects carry no
+  trailing period, per standard Conventional-Commits). The human
+  wanted a consistent end-of-subject marker regardless of whether a
+  body follows, so the period is now always present — a deliberate
+  departure from Conventional-Commits, noted as such in the rule
+  text. The `Data:`-commit bullet's parenthetical is updated (it
+  cited "a one-liner, so it ends with a period" — now it ends with
+  a period because every subject does). The worked-example subjects
+  in §6 already carried periods, so they now match the rule instead
+  of contradicting it. Self-applied: this commit's subject ends with
+  a period, and the two prior unpushed multi-line commits (the
+  Settings-panel `Refactor:` and the README `Doc:`) were reworded
+  retrospectively to add the period, so the recent history reflects
+  the new rule immediately. (History rewrite was local-only — those
+  commits were not pushed — and done via a backup branch +
+  cherry-pick rebuild, not force-push.)

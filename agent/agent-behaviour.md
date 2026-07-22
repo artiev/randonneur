@@ -173,12 +173,12 @@
 - **Commits are atomic and Conventional-Commits-flavoured:**
   - Type prefix, capitalized: `Feat:`, `Fix:`, `Refactor:`, `Doc:`,
     `Chore:`, and `Data:` (see the data-track rule below).
-  - Subject in the **imperative mood**. A multi-line commit's subject
-    has **no trailing period** (standard Conventional-Commits); a
-    **one-liner** message (subject only, no body) **ends with a `.`**
-    to mark the end of the message — the period signals "there is no
-    body", so a reader skimming `git log --oneline` knows the subject
-    is the whole message.
+  - Subject in the **imperative mood** and **ends with a `.`**,
+    always — one-liner or multi-line alike. (This is a deliberate
+    departure from standard Conventional-Commits, which drops the
+    trailing period on multi-line subjects; this project prefers the
+    period as a consistent end-of-subject marker regardless of
+    whether a body follows.)
   - Examples from this rework:
     `Feat: Flatten the TUI into a Home menu with full-width panels.`
     `Fix: Persist config editor field edits (InquirerPy deep-copies Choice values).`
@@ -188,8 +188,8 @@
   a `Feat:`/`Fix:` commit — it would clutter that commit's diff and
   mix a data addition with a code change. Stage just the data file
   (+ its `agent-history.md` entry) and commit as
-  `Data: <one-line description>.` (a one-liner, so it ends with a
-  period per the rule above). Multiple new tracks in one go are still
+  `Data: <one-line description>.` (the subject ends with a period
+  per the rule above). Multiple new tracks in one go are still
   one `Data:` commit only if they belong together (e.g. a batch
   import); otherwise one track per `Data:` commit. *(randonneur
   project rule — the dataset lives in-repo under `data/`.)*
