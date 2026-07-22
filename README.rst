@@ -15,15 +15,13 @@ build step.
 Why this exists
 ---------------
 
-GPXSee_ is the lightweight reference viewer. gpx.studio_ is the
-UX reference for click-to-focus. randonneur borrows the paper-map
-aesthetic from the first and the "open the folder, see every track
-at once" flow from the second, and runs entirely as a local
-FastAPI app + a single static page in the browser. No build step,
-no JS framework.
-
-.. _GPXSee: https://www.gpxsee.org/
-.. _gpx.studio: https://gpx.studio/
+randonneur is a small, local-first GPX viewer: point it at a
+folder of recorded hikes, see every track on a paper-map-styled
+base layer at once, and hover between the map and an elevation
+profile. It runs entirely as a local FastAPI app plus a single
+static page in the browser — no build step, no JS framework, no
+account, no upload. The folder on disk is the source of truth:
+edit a GPX file, save, and the UI reloads in place.
 
 
 Install
@@ -93,12 +91,16 @@ Select your first folder
 
 Open the UI in a browser (either via the auto-open, or by visiting
 ``http://127.0.0.1:8765`` yourself). The header shows the loaded
-folder as read-only information; the track list is on the left; the
-map fills the upper-right; the elevation profile fills the lower-right.
+folder as read-only information and two buttons — ⚙ (Settings) and
+✎ (Edit metadata); the track list is on the left; the map fills the
+upper-right; the elevation profile fills the lower-right. Both
+header buttons open a right-side tab panel that slides in from the
+right edge and takes its own column, so the map and profile panes
+resize beneath it.
 
 ::
 
-    randonneur  Folder  /Users/you/Tracks                 ⚙
+    randonneur  Folder  /Users/you/Tracks              ⚙  ✎
 
 The status line under the header shows the track count and any
 per-file parse errors. To switch folders, restart the server with
@@ -115,11 +117,13 @@ Once a folder is loaded:
 - **Edit a GPX file in the folder and save it** — the UI re-loads
   the folder and updates the track list / map / profile in place.
   No page refresh.
-- **Click ⚙ in the header** to switch the base layer, toggle the
-  scale bar, or edit the selected track's metadata (the GPX
-  ``<name>`` / ``<desc>`` / ``<author>`` and the per-track
-  ``<trk><name>`` / ``<trk><desc>``). See `Base layer and tiles`_
-  and `Metadata editing`_ below.
+- **Click ⚙ in the header** to open the Settings tab — switch the
+  base layer, toggle the scale bar, or set the elevation-smoothing
+  window. See `Base layer and tiles`_ below.
+- **Click ✎ in the header** to open the Edit tab and edit the
+  selected track's metadata (the GPX ``<metadata>`` ``<name>`` /
+  ``<desc>`` / ``<author>`` and the per-track ``<trk>`` ``<name>`` /
+  ``<desc>``). See `Metadata editing`_ below.
 
 
 What you get
@@ -132,7 +136,7 @@ FastAPI + Uvicorn.
 ::
 
     ┌────────────────────────────────────────────────────────────┐
-    │ randonneur   Folder  /Users/you/Tracks                 ⚙    │
+    │ randonneur   Folder  /Users/you/Tracks              ⚙  ✎    │
     ├──────────────┬─────────────────────────────────────────────┤
     │ ☑ tour1.gpx  │                                             │
     │ ☐ tour2.gpx  │              MAP (Leaflet)                  │
@@ -149,53 +153,63 @@ FastAPI + Uvicorn.
     │ └─────────────────▶ km          tour2.gpx · 12.4 km        │
     └──────────────────────────────────────────────────────────────┘
 
-The split between map and profile is fixed at 1fr / 240 px. Making
-it draggable is cheap to add later if you want to.
+The schematic shows the default (panel-closed) state. Clicking ⚙ or
+✎ slides the right-side tab panel in over the right column; the map
+and profile panes resize beneath it. The split between map and
+profile is fixed at 1fr / 240 px. Making it draggable is cheap to
+add later if you want to.
 
 
 Base layer and tiles
 --------------------
 
 The default base layer is **OpenTopoMap** — a paper-map-style layer
-with contours, trails and POIs. Tiles are fetched through the
-server (``/api/tiles/<source>/...``) so we can rate-limit per host
-and cache to disk under ``~/.cache/randonneur/tiles/``. To reset
-the cache::
+with contours, trails and POIs. Two more free, no-key sources sit
+alongside it in the Map provider section: **OpenStreetMap Standard**
+(the classic OSM raster) and **Satellite (ESRI)** (ESRI World
+Imagery). The **Thunderforest** family — Outdoors, Landscape,
+Transport, Cycle — is offered too, but needs a free API key. Tiles
+are fetched through the server (``/api/tiles/<source>/...``) so we
+can rate-limit per host and cache to disk under
+``~/.cache/randonneur/tiles/``. To reset the cache::
 
     rm -rf ~/.cache/randonneur/tiles
 
-A second source, **Thunderforest Outdoors**, is whitelisted but
-disabled by default. It needs a free API key — sign up at
+The Thunderforest layers need a key — sign up at
 https://www.thunderforest.com/ and set::
 
     export RANDONNEUR_THUNDERFOREST_KEY=your-key-here
 
 before starting the server. The key never leaves the server: the
-browser only sees ``/api/tiles/thunderforest-outdoors/{z}/{x}/{y}.png``.
-With the env var set, the ⚙ panel will offer Thunderforest as an
-alternative base layer; without it, the entry is shown as
-"unavailable" so you don't have to discover the missing-config
-problem via a 503 on the first map pan.
+browser only sees
+``/api/tiles/thunderforest-<style>/{z}/{x}/{y}.png``. With the env
+var set, the Map provider section offers the four Thunderforest
+layers as alternative base layers; without it, they show as
+"API key required" so you don't discover the missing-config problem
+via a 503 on the first map pan.
 
-OpenTopoMap's policy is "≤ 1 request per second per client". The
-built-in rate limiter smooths bursts to that mean; in practice
-the on-disk cache means the limiter only matters during the first
-load of a brand-new area.
+OpenTopoMap's policy is "≤ 1 request per second per client" and OSM
+asks the same. The built-in per-host rate limiter smooths bursts to
+that mean; in practice the on-disk cache means the limiter only
+matters during the first load of a brand-new area.
 
 
 Metadata editing
 ----------------
 
-The right-side settings tab (click ⚙) has a **Metadata** section
-that appears when a track is selected. It surfaces the five
-human-readable fields a GPX 1.1 file can carry:
+The **Edit** tab (click ✎ in the header) is a separate view from
+Settings — the two header buttons switch the same right-side panel
+between its Settings and Edit views. With no track selected, the
+Edit view shows a "Select a track to edit its metadata" placeholder;
+select a track in the sidebar and the form appears, surfacing the
+five human-readable fields a GPX 1.1 file can carry:
 
+- ``<trk><name>`` and ``<trk><desc>`` — the per-track display name
+  and description (randonneur shows the first ``<trk>`` of a
+  multi-track file; that's the one a typical recording has).
 - ``<metadata><name>`` and ``<metadata><desc>`` — the top-level
   trip name and description.
 - ``<metadata><author><name>`` — the trip author.
-- ``<trk><name>`` and ``<trk><desc>`` — the per-track display
-  name and description (randonneur shows the first ``<trk>`` of
-  a multi-track file; that's the one a typical recording has).
 
 Each field has a 1000-character cap, both client-side and in the
 ``PATCH /api/tracks/{id}/metadata`` endpoint. Save writes the
@@ -224,13 +238,13 @@ The file picks up the same paper-map palette as the rest of
 the app so it sits naturally next to OpenTopoMap thumbnails in
 the tab strip.
 
-The UI icons (the ⚙ in the header, the × in the settings tab,
-the Save / Clear all buttons in the metadata editor) come from
-Font Awesome 6 Free via the cdnjs CDN. Free is free for
-commercial and personal use: the icons are CC BY 4.0
-(attribution is in the CSS file's comment header) and the font
-itself is SIL OFL 1.1 (free to redistribute). No env var, no
-license key, no extra dependency.
+The UI icons (the ⚙ and ✎ buttons in the header, the × that
+closes the side panel, the Save / Clear all buttons in the
+metadata editor) come from Font Awesome 6 Free via the cdnjs CDN.
+Free is free for commercial and personal use: the icons are CC
+BY 4.0 (attribution is in the CSS file's comment header) and the
+font itself is SIL OFL 1.1 (free to redistribute). No env var,
+no license key, no extra dependency.
 
 
 Project layout

@@ -1645,3 +1645,37 @@ server on the actual `data/` tracks confirms 435.7/422.7 m
   `.leaflet-tile-loaded`.) 140 tests green. Settings stay in-memory
   only ("viewer, not a configurator"); the Edit view is untouched.
   The branch merges to `main` only when asked.
+
+- 2026-07-22 — Commit 34 (`Doc`): **Revise the README — drop
+  other-tool references, update the panel layout, and rewrite the
+  metadata-editing flow.** On `main` at the human's explicit
+  request ("stay on main"), so no feature branch. Three changes.
+  (1) "Why this exists" no longer names GPXSee / gpx.studio as the
+  aesthetic / UX references — rewritten as randonneur's own
+  local-first rationale (folder on disk is the source of truth;
+  no build step, no framework, no account, no upload). (2) Panel
+  layout brought up to date with the current UI: the header now
+  carries two buttons — ⚙ (Settings) and ✎ (Edit metadata) — and
+  both open a right-side tab panel that slides in from the right
+  edge and takes its own column (the map + profile panes resize
+  beneath it), not the old top-right popover. The ASCII schematic
+  shows the panel-closed default and notes the slide-in behaviour;
+  the "Once a folder is loaded" bullets are split into a ⚙ bullet
+  (base layer / scale bar / elevation smoothing) and a ✎ bullet
+  (metadata). (3) "Metadata editing" rewritten: the editor is the
+  **Edit** view (✎), a separate view from Settings in the same
+  right-side panel — not a "Metadata section" inside the Settings
+  tab as the old text claimed. The field list is reordered to
+  match the form (per-track ``<trk>`` name/desc first, then
+  ``<metadata>`` name/desc, then author) and the "no track
+  selected → placeholder" flow is described. While here, the
+  "Base layer and tiles" section was brought in line with the
+  diversified registry (commit 33): it now lists all 7 sources —
+  OpenTopoMap (default), OpenStreetMap Standard and Satellite
+  (ESRI) as free no-key options, and the Thunderforest family
+  (Outdoors / Landscape / Transport / Cycle) behind the key —
+  instead of the stale "a second source, Thunderforest Outdoors".
+  The "Icons and favicon" section now mentions the ✎ header
+  button alongside ⚙. RST validates strict (`docutils --strict`)
+  and `tests/test_docs.py` (5) + the full suite (140) are green.
+  No code change.
